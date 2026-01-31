@@ -1,0 +1,58 @@
+node_modules
+.env
+.DS_Store
+
+unity-simulation/BoxBayTwin/[Ll]ibrary/
+unity-simulation/BoxBayTwin/[Tt]emp/
+unity-simulation/BoxBayTwin/[Oo]bj/
+unity-simulation/BoxBayTwin/[Bb]uild/
+unity-simulation/BoxBayTwin/[Bb]uilds/
+unity-simulation/BoxBayTwin/[Ll]ogs/
+unity-simulation/BoxBayTwin/[Uu]ser[Ss]ettings/
+
+# Memory captures
+unity-simulation/BoxBayTwin/[Mm]emoryCaptures/
+
+# Asset Compute Cache
+unity-simulation/BoxBayTwin/[Aa]sset[Cc]ompute[Cc]ache/
+
+# Gradle cache
+unity-simulation/BoxBayTwin/.gradle/
+
+# Never ignore .meta files
+!/[Aa]ssets/**/*.meta
+
+# Unity Editor / Project generated files
+unity-simulation/BoxBayTwin/ExportedObj/
+unity-simulation/BoxBayTwin/.plastic/
+
+# Visual Studio / Rider / VS Code generated files
+.vs/
+.idea/
+.vscode/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svclog
+*.pdb
+*.opendb
+*.db
+
+# Unity3D Generated File On Crash Reports
+sysinfo.txt
+
+# Builds
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# OS generated files
+.DS_Store
+Thumbs.db
