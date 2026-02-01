@@ -1,38 +1,263 @@
+/* Modern Dark Theme & Container Styling */
+body {
+  background-color: #1e1e2f;
+  color: #e0e0e0;
+  margin: 0;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+}
+
 .App {
   text-align: center;
 }
 
-.App-logo {
-  height: 40vmin;
-  pointer-events: none;
+h1 {
+  color: #fff;
+  font-weight: 300;
+  letter-spacing: 1px;
+  margin-top: 30px;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  .App-logo {
-    animation: App-logo-spin infinite 20s linear;
-  }
+/* --- GRID LAYOUT --- */
+.grid-container {
+  display: flex;
+  justify-content: center;
+  align-items: flex-end;
+  /* Align bottom */
+  gap: 60px;
+  margin: 50px 0;
+  padding: 20px;
 }
 
-.App-header {
-  background-color: #282c34;
-  min-height: 100vh;
+.grid-rack {
   display: flex;
   flex-direction: column;
+  background-color: #2a2a40;
+  padding: 20px;
+  border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  border: 1px solid #444;
+}
+
+.grid-rack h3 {
+  text-align: center;
+  margin: 0 0 20px 0;
+  color: #888;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  letter-spacing: 2px;
+}
+
+.rack-rows {
+  display: flex;
+  /* Horizontal Rows */
+  gap: 15px;
+}
+
+.rack-column {
+  display: flex;
+  flex-direction: column-reverse;
+  /* Tiers go up */
+  gap: 8px;
+}
+
+/* --- SLOT / BOX STYLING --- */
+.slot {
+  width: 70px;
+  height: 70px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  font-size: calc(10px + 2vmin);
+  font-size: 0.75rem;
+  font-family: 'Courier New', monospace;
+  font-weight: bold;
+  border-radius: 4px;
+  transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  cursor: pointer;
+  position: relative;
+
+  /* "Empty Slot" Look */
+  border: 2px dashed #444;
+  background-color: #262636;
+  color: #555;
+}
+
+/* --- AVAILABILITY STATES --- */
+.slot.available {
+  /* Subtle Green pulse or just clean look */
+  border-color: #2e7d32;
+  background: rgba(46, 125, 50, 0.1);
+  color: #4caf50;
+}
+
+.slot.occupied {
+  /* CONTAINER BOX LOOK */
+  border: 2px solid #d32f2f;
+  background: linear-gradient(135deg, #f44336 0%, #b71c1c 100%);
   color: white;
+  box-shadow: 0 4px 10px rgba(244, 67, 54, 0.4);
+  transform: scale(1.05);
+  /* Pop out slightly */
+  z-index: 1;
 }
 
-.App-link {
-  color: #61dafb;
+.slot:hover {
+  transform: translateY(-2px);
+  z-index: 2000;
+  /* Ensure tooltip shows above siblings */
 }
 
-@keyframes App-logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+/* Tooltip */
+.slot:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: -40px;
+  /* Show above */
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 8px 12px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+  /* Allow multiline */
+  font-size: 11px;
+  line-height: 140%;
+  text-align: left;
+  min-width: 120px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+  z-index: 1000;
+  border: 1px solid #555;
+}
+
+/* --- CRANE --- */
+.crane-tower {
+  width: 40px;
+  height: 300px;
+  /* Approximate height matching rack */
+  background: #ffc107;
+  color: #000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  writing-mode: vertical-rl;
+  font-weight: bold;
+  border-radius: 4px;
+  box-shadow: 0 0 20px rgba(255, 193, 7, 0.2);
+  text-orientation: upright;
+  letter-spacing: 5px;
+}
+
+/* --- CONTROL CARDS --- */
+.control-panel {
+  display: flex;
+  gap: 20px;
+  justify-content: center;
+  flex-wrap: wrap;
+  padding: 0 20px;
+}
+
+.control-card {
+  background-color: #2a2a40;
+  padding: 25px;
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+  width: 30%;
+  border: 1px solid #444;
+  color: #ccc;
+  transition: transform 0.2s;
+}
+
+.control-card:hover {
+  transform: translateY(-3px);
+  border-color: #666;
+}
+
+.control-card h2 {
+  color: #fff;
+  margin-top: 0;
+  font-size: 1.2rem;
+  border-bottom: 1px solid #444;
+  padding-bottom: 10px;
+  margin-bottom: 20px;
+}
+
+.control-card label {
+  display: block;
+  margin-bottom: 5px;
+  font-size: 0.9rem;
+  color: #aaa;
+}
+
+.control-card input {
+  width: 100%;
+  padding: 10px;
+  background: #1e1e2f;
+  border: 1px solid #555;
+  color: white;
+  border-radius: 6px;
+  font-size: 1rem;
+  box-sizing: border-box;
+  /* Important for padding */
+}
+
+.control-card input:focus {
+  border-color: #007bff;
+  outline: none;
+}
+
+.control-card button {
+  width: 100%;
+  background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+  color: white;
+  border: none;
+  padding: 12px;
+  font-size: 1rem;
+  font-weight: bold;
+  border-radius: 6px;
+  cursor: pointer;
+  margin-top: 15px;
+  transition: opacity 0.2s;
+}
+
+.control-card button:hover {
+  opacity: 0.9;
+}
+
+/* Range Slider override */
+input[type=range] {
+  background: transparent;
+  height: 25px;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type=range]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 8px;
+  background: #444;
+  border-radius: 4px;
+}
+
+input[type=range]::-webkit-slider-thumb {
+  height: 20px;
+  width: 20px;
+  border-radius: 50%;
+  background: #007bff;
+  margin-top: -6px;
+  -webkit-appearance: none;
+  cursor: pointer;
+}
+
+/* Logs Panel specific */
+.log-window {
+  height: 300px;
+  overflow-y: auto;
+  background: #111;
+  color: #00ff00;
+  padding: 15px;
+  border-radius: 6px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.85rem;
+  border: 1px solid #333;
 }

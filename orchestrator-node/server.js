@@ -53,6 +53,42 @@ app.post('/api/inbound/optimize', inboundController.optimizeInbound);
 // SCENARIO 2: GPS Tracking (Triggered by Slider on UI)
 app.post('/api/tracking/update', trackingController.updateGPS);
 
+// --- GRID MANAGEMENT ---
+const gridState = require('./src/models/gridState');
+
+app.get('/api/grid/status', (req, res) => {
+    res.json(gridState.getAllSlots());
+});
+
+// --- PROXY ROUTES FOR SMART INBOUND ---
+const axios = require('axios'); // Ensure axios is required if using it here, but server.js didn't import it at top. Checking if needed.
+// Wait, axios is likely needed. Let's add it at the top or assume it's global? No, need to require it.
+// Checking imports: const express...
+// I should probably add const axios = require('axios'); at the top in a separate edit or inline it here if possible, but standard is top.
+// Let's add these routes.
+
+app.get('/api/receivers', async (req, res) => {
+    try {
+        const axios = require('axios');
+        const response = await axios.get(`${process.env.PYTHON_ML_SERVICE || 'http://localhost:8000'}/receivers`);
+        res.json(response.data);
+    } catch (err) {
+        console.error("Error fetching receivers:", err.message);
+        res.status(500).json({ error: "Failed to fetch receivers" });
+    }
+});
+
+app.post('/api/inbound/predict', async (req, res) => {
+    try {
+        const axios = require('axios');
+        const response = await axios.post(`${process.env.PYTHON_ML_SERVICE || 'http://localhost:8000'}/predict-date`, req.body);
+        res.json(response.data);
+    } catch (err) {
+        console.error("Error fetching prediction:", err.message);
+        res.status(500).json({ error: "Prediction failed" });
+    }
+});
+
 server.listen(PORT, () => {
     console.log(`🚀 Orchestrator running on http://localhost:${PORT}`);
 });

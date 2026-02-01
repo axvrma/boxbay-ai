@@ -10,7 +10,7 @@ def train_dwell_time_model():
     print("🧠 Starting Brain A Training...")
 
     # 1. Load the synthetic data
-    # Looks for data in 'boxbay-digital-twin/data'
+    # Looks for data in 'boxbay-digital-twin/ml-services/data'
     base_dir = os.path.dirname(__file__)
     data_path = os.path.abspath(os.path.join(base_dir, '../data/synthetic_logs.csv'))
 
