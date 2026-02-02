@@ -256,7 +256,7 @@ async def optimize_grid(data: GridState):
                 break
 
         if candidate:
-            moves.append(f"MOVE {origin.containerId} ({profile}) from {origin.id} -> {candidate.id}")
+            moves.append(f"🔹 <b>Simple Move:</b> Shift <b>{origin.containerId}</b> ({profile}) to empty slot in Row {target_row}.")
             empty.remove(candidate)
             continue
 
