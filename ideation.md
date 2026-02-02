@@ -64,13 +64,31 @@ BoxBay resolves the "Re-Shuffling Problem" of traditional stacking by providing 
     - **UI Feature**: A "Beautiful Timeline" card that breaks down these complex moves into readable, highlighted steps (e.g., "🔄 Swap BOX_A ↔ BOX_B").
 
 ### Scenario 3: Just-in-Time Retrieval (GPS Trigger)
-**Goal:** Retrieve the container so it hits the transfer tray exactly when the truck arrives ($Wait\_Time = 0$).
+**Goal:** Auto-dispatch crane when Truck is *about* to arrive ($Wait\_Time = 0$).
 
-### The Workflow
-1.  **Tracking:** Background service/slider simulates Truck GPS distance (km).
-2.  **Physics Trigger:**
-    *   The system knows the exact physical properties of the crane (Hoist Speed, Trolley Speed).
-    *   It calculates: $T_{retrieval} = \max(T_{hoist}, T_{trolley})$.
-3.  **Action:**
-    *   When $T_{truck\_arrival} \le T_{retrieval} + T_{buffer}$, dispatch the crane.
-    *   The crane retrieves the box *while* the truck is parking.
+### The Workflow (Implemented)
+1.  **User Inputs:**
+    *   **Select Container:** Filtered dropdown of occupied slots.
+    *   **Target Time:** Desired unload time (e.g., 10 mins).
+    *   **Truck Distance:** Logic-driven slider (0-20 km).
+2.  **Physics Trigger (Logic):**
+    *   **Speed Constant:** Truck moves at 40 km/h (1.5 mins/km).
+    *   **Calculated ETA:** $ETA = Distance \times 1.5$.
+3.  **State Machine:**
+    *   **En Route:** $ETA > Target$.
+    *   **Dispatched:** $ETA \le Target$. (Crane triggers `POST /api/outbound/retrieve`).
+    *   **Delivered:** $Distance = 0 km$. (Final "Success" state).
+
+---
+
+## UI/UX Design System
+To ensure a premium, control-tower aesthetic, the dashboard adheres to strict design rules:
+1.  **Typography**: `Google Sans`, `Inter`, `Segoe UI`. Clean, modern, and legible.
+2.  **Layout**: **2x2 Grid System**.
+    *   **Top:** Twin Grids (A & B) visualization.
+    *   **Bottom:** Three functional cards (Smart Inbound, Housekeeping, JIT + Logs) sharing equal widths (45%) and height profiles.
+3.  **Color Coding (The "Heat Map" Grid):**
+    *   **🟦 Blue:** **Fast Movers** (< 3 Days). High priority.
+    *   **🟥 Red:** **Slow Movers** (> 7 Days). Long-term storage.
+    *   **🟧 Orange:** **Medium Movers**. Standard priority.
+    *   **Gradients:** Removed in favor of solid, high-contrast colors for clarity.
