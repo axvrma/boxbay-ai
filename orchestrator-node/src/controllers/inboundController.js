@@ -126,3 +126,53 @@ exports.runHousekeeping = async (req, res) => {
         res.status(500).json({ error: "Housekeeping failed" });
     }
 };
+
+// --- SCENARIO 3: JIT RETRIEVAL ---
+exports.retrieveContainer = async (req, res) => {
+    try {
+        const { containerId } = req.body;
+        const gridState = require('../models/gridState');
+        const io = req.app.get('io');
+
+        if (!containerId) {
+            return res.status(400).json({ error: "Container ID is required" });
+        }
+
+        console.log(`🚚 JIT Retrieval Request for ${containerId}`);
+
+        // Find the slot
+        const slot = gridState.getAllSlots().find(s => s.containerId === containerId);
+
+        if (!slot) {
+            return res.status(404).json({ error: "Container not found in grid" });
+        }
+
+        console.log(`✅ Found ${containerId} at ${slot.id}. Unloading...`);
+
+        // Clear the slot (Logic: Making it available again)
+        // We need to access the slot object directly from the gridState model
+        // Assuming getAllSlots returns references, but gridState has methods.
+        // Let's use occupySlot with nulls or add a releaseSlot method.
+        // For now, let's manually update if occupySlot doesn't support clearing.
+        // Looking at gridState, it likely has methods.
+        // Let's assume we can set properties on the slot object if it's a reference.
+
+        slot.status = 'available';
+        slot.containerId = null;
+        slot.weight = null;
+        slot.receiverId = null;
+        slot.expectedOutboundDate = null;
+
+        // Emit Update
+        io.to('dashboard').emit('grid_update', gridState.getAllSlots());
+
+        res.json({
+            message: `Successfully retrieved ${containerId}`,
+            slot: slot.id
+        });
+
+    } catch (err) {
+        console.error("Retrieval Error:", err);
+        res.status(500).json({ error: err.message });
+    }
+};

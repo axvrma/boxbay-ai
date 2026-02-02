@@ -30,9 +30,15 @@ function App () {
   // State for Grid Visualization
   const [gridState, setGridState] = useState([]);
 
-  // State for Scenario 2: Housekeeping
+  // State for Scenario 2: Housekeeping(3)
   const [housekeepingPlan, setHousekeepingPlan] = useState([]);
   const [isHousekeepingLoading, setIsHousekeepingLoading] = useState(false);
+
+  // State for Scenario 3: JIT Retrieval
+  const [jitBox, setJitBox] = useState("");
+  const [targetMinutes, setTargetMinutes] = useState(10);
+  const [eta, setEta] = useState(30); // minutes
+  const [retrievingBox, setRetrievingBox] = useState(null); // Prevent duplicate triggers
 
   useEffect(() => {
     // Debugging: Log connection attempts
@@ -68,7 +74,6 @@ function App () {
       socket.emit('register', 'dashboard');
     }
 
-    return () => socket.off(); // Cleanup
     return () => socket.off(); // Cleanup
   }, []);
 
@@ -175,10 +180,53 @@ function App () {
   };
 
   const handleSliderChange = async (e) => {
-    const val = parseFloat(e.target.value);
-    setDistance(val);
+    const dist = parseFloat(e.target.value);
+    setDistance(dist);
 
-    // Send GPS Update (Not fully implemented in backend yet, but UI is ready)
+    // Truck Speed: 40 km/h -> 1.5 mins per km
+    const computedEta = dist * 1.5;
+    setEta(computedEta);
+
+    // 1. ARRIVAL LOGIC (Distance 0)
+    if (dist === 0) {
+      setTruckStatus("✅ TRUCK ARRIVED & DELIVERED");
+      return;
+    }
+
+    // 2. DISPATCH LOGIC (ETA <= Target)
+    if (jitBox && computedEta <= targetMinutes) {
+      // Only update status if not already delivered
+      if (!truckStatus.includes("DELIVERED")) {
+        setTruckStatus("🏗️ CRANE DISPATCHED!");
+      }
+
+      // Trigger Unload (Idempotent)
+      if (retrievingBox !== jitBox) {
+        setRetrievingBox(jitBox);
+        handleRetrieval(jitBox);
+      }
+    }
+    // 3. EN ROUTE LOGIC (Outside Target Zone)
+    else {
+      // Only revert to En Route if we haven't already dispatched for this box
+      // allowing user to "reset" the simulation by dragging back out
+      if (!retrievingBox && !truckStatus.includes("DELIVERED")) {
+        setTruckStatus("🚛 Truck En Route...");
+      }
+    }
+  };
+
+  const handleRetrieval = async (boxId) => {
+    addLog(`🚨 JIT TRIGGER: Truck is ${distance}km away. Retrieving ${boxId} now!`);
+    try {
+      await axios.post(`${SOCKET_SERVER}/api/outbound/retrieve`, { containerId: boxId });
+      // Don't clear jitBox immediately so slider logic persists
+      // setJitBox("");
+      // setTimeout(() => setTruckStatus("✅ DELIVERED"), 2000); // Removed timeout logic in favor of manual 0km check
+    } catch (err) {
+      console.error(err);
+      addLog(`❌ Retrieval Failed: ${err.message}`);
+    }
   };
 
   // Helper to render a Grid
@@ -429,19 +477,68 @@ function App () {
           </div>
         </div>
 
-        {/* PANEL 3: GPS CONTROLS */}
+        {/* PANEL 3: JIT RETRIEVAL (GPS) */}
         <div className="control-card">
           <h2>Scenario 3: Just-in-Time Retrieval</h2>
-          <p>Truck Distance: <strong>{distance} km</strong></p>
+
+          {/* Step 1: Select Box */}
+          <div style={{ marginBottom: '10px' }}>
+            <label>Select Container to Retrieve: </label>
+            <select
+              value={jitBox}
+              onChange={e => setJitBox(e.target.value)}
+              style={{ width: '100%', padding: '10px', background: '#1e1e2f', color: 'white', border: '1px solid #555', borderRadius: '6px' }}
+            >
+              <option value="">-- Choose Container --</option>
+              {gridState.filter(s => s.status === 'occupied').map(s => (
+                <option key={s.containerId} value={s.containerId}>{s.containerId} (Row {s.row})</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Step 2: Target Time */}
+          <div style={{ marginBottom: '10px' }}>
+            <label>Target Unload Time (Mins): </label>
+            <select
+              value={targetMinutes}
+              onChange={e => setTargetMinutes(parseInt(e.target.value))}
+              style={{ width: '100%', padding: '10px', background: '#1e1e2f', color: 'white', border: '1px solid #555', borderRadius: '6px' }}
+            >
+              <option value="5">5 Mins</option>
+              <option value="10">10 Mins</option>
+              <option value="15">15 Mins</option>
+              <option value="20">20 Mins</option>
+              <option value="30">30 Mins</option>
+            </select>
+          </div>
+
+          <hr style={{ borderColor: '#333', margin: '15px 0' }} />
+
+          {/* Step 3: Truck Simulation */}
+          <p>Truck Distance: <strong style={{ color: '#4caf50', fontSize: '1.2rem' }}>{distance} km</strong></p>
           <input
             type="range"
-            min="0" max="10" step="0.5"
+            min="0" max="20" step="0.5"
             value={distance}
             onChange={handleSliderChange}
-            style={{ width: '100%' }}
+            style={{ width: '100%', accentColor: '#4caf50' }}
           />
-          <div style={{ marginTop: '20px', padding: '10px', borderRadius: '4px', background: truckStatus === "CRANE DISPATCHED" ? 'rgba(244, 67, 54, 0.2)' : 'rgba(255, 255, 255, 0.05)', color: truckStatus === "CRANE DISPATCHED" ? '#f44336' : '#aaa' }}>
-            Status: <strong>{truckStatus}</strong>
+
+          <div style={{ marginTop: '15px', display: 'flex', justifyContent: 'space-between', fontSize: '0.9rem', color: '#ccc' }}>
+            <span>Speed: <strong>40 km/h</strong></span>
+            <span>ETA: <strong style={{ color: eta <= targetMinutes ? '#ffeb3b' : '#fff' }}>{Math.round(eta)} mins</strong></span>
+          </div>
+
+          <div style={{
+            marginTop: '20px',
+            padding: '12px',
+            borderRadius: '4px',
+            textAlign: 'center',
+            background: truckStatus.includes("DISPATCH") ? 'rgba(76, 175, 80, 0.2)' : 'rgba(255, 255, 255, 0.05)',
+            color: truckStatus.includes("DISPATCH") ? '#4caf50' : '#aaa',
+            border: truckStatus.includes("DISPATCH") ? '1px solid #4caf50' : '1px solid #333'
+          }}>
+            <strong>{truckStatus.toUpperCase()}</strong>
           </div>
         </div>
 

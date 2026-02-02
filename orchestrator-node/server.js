@@ -55,6 +55,7 @@ app.post('/api/housekeeping', inboundController.runHousekeeping);
 
 // SCENARIO 3: GPS Tracking (Triggered by Slider on UI)
 app.post('/api/tracking/update', trackingController.updateGPS);
+app.post('/api/outbound/retrieve', inboundController.retrieveContainer);
 
 // --- GRID MANAGEMENT ---
 const gridState = require('./src/models/gridState');
