@@ -258,9 +258,36 @@ function App () {
           {stackSlots.map(slot => {
             // Build Tooltip text
             let tooltipText = `${slot.id}`;
+            let bgColor = ''; // Default class-based color
+            let borderColor = '';
+
             if (slot.status === 'occupied') {
               const recName = receivers.find(rec => rec.id === slot.receiverId)?.name || slot.receiverId || 'Unknown';
               tooltipText = `📦 ID: ${slot.containerId}\n👤 Rec: ${recName}\n⚖️ Wt: ${slot.weight}T\n📅 Out: ${slot.expectedOutboundDate || 'N/A'}`;
+
+              // --- COLOR CODING LOGIC ---
+              if (slot.expectedOutboundDate) {
+                const now = new Date();
+                const out = new Date(slot.expectedOutboundDate);
+                const diffTime = out - now;
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+
+                // Log for debugging
+                console.log(`Slot ${slot.id}: Out=${slot.expectedOutboundDate}, DiffDays=${diffDays}`);
+
+                if (diffDays <= 3) {
+                  // FAST MOVER -> BLUE
+                  bgColor = '#2196F3 !important';
+                  tooltipText += `\n🚀 FAST MOVER (${diffDays} days)`;
+                } else if (diffDays > 7) {
+                  // SLOW MOVER -> RED
+                  bgColor = '#F44336 !important';
+                  tooltipText += `\n🐢 SLOW MOVER (${diffDays} days)`;
+                } else {
+                  // MEDIUM -> Default Orange
+                  bgColor = '#FFA726 !important';
+                }
+              }
             }
 
             return (
@@ -268,8 +295,13 @@ function App () {
                 key={slot.id}
                 className={`slot ${slot.status}`}
                 data-tooltip={tooltipText}
+                style={bgColor ? { background: bgColor.replace('!important', ''), borderColor: '#fff', border: '2px solid white' } : {}}
               >
-                {slot.status === 'occupied' ? slot.containerId : `${gridName}${c}${slot.row}`}
+                {slot.status === 'occupied' ? (
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+                    <span style={{ fontWeight: 'bold', color: 'white' }}>{slot.containerId}</span>
+                  </div>
+                ) : `${gridName}${c}${slot.row}`}
               </div>
             );
           })}
@@ -302,7 +334,7 @@ function App () {
 
         {/* Crane Representation */}
         <div className="crane-tower">
-          STACKER CRANE
+          CRANE
         </div>
 
         <div className="grid-rack">
@@ -543,7 +575,7 @@ function App () {
         </div>
 
         {/* PANEL 3: LIVE LOGS */}
-        <div className="control-card" style={{ flex: 1 }}>
+        <div className="control-card">
           <h2>Live System Logs</h2>
           <div className="log-window">
             {logs.map((log, i) => <div key={i}>{log}</div>)}

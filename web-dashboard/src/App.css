@@ -1,9 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 /* Modern Dark Theme & Container Styling */
 body {
   background-color: #1e1e2f;
   color: #e0e0e0;
   margin: 0;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: 'Google Sans', 'Inter', 'Segoe UI', sans-serif;
+  /* Explicit Request */
+  -webkit-font-smoothing: antialiased;
 }
 
 .App {
@@ -22,7 +26,6 @@ h1 {
   display: flex;
   justify-content: center;
   align-items: flex-end;
-  /* Align bottom */
   gap: 60px;
   margin: 50px 0;
   padding: 20px;
@@ -49,14 +52,12 @@ h1 {
 
 .rack-rows {
   display: flex;
-  /* Horizontal Rows */
   gap: 15px;
 }
 
 .rack-column {
   display: flex;
   flex-direction: column-reverse;
-  /* Tiers go up */
   gap: 8px;
 }
 
@@ -74,8 +75,6 @@ h1 {
   transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
   cursor: pointer;
   position: relative;
-
-  /* "Empty Slot" Look */
   border: 2px dashed #444;
   background-color: #262636;
   color: #555;
@@ -83,27 +82,23 @@ h1 {
 
 /* --- AVAILABILITY STATES --- */
 .slot.available {
-  /* Subtle Green pulse or just clean look */
   border-color: #2e7d32;
   background: rgba(46, 125, 50, 0.1);
   color: #4caf50;
 }
 
 .slot.occupied {
-  /* CONTAINER BOX LOOK */
   border: 2px solid #d32f2f;
   background: linear-gradient(135deg, #f44336 0%, #b71c1c 100%);
   color: white;
   box-shadow: 0 4px 10px rgba(244, 67, 54, 0.4);
   transform: scale(1.05);
-  /* Pop out slightly */
   z-index: 1;
 }
 
 .slot:hover {
   transform: translateY(-2px);
   z-index: 2000;
-  /* Ensure tooltip shows above siblings */
 }
 
 /* Tooltip */
@@ -111,7 +106,6 @@ h1 {
   content: attr(data-tooltip);
   position: absolute;
   top: -40px;
-  /* Show above */
   left: 50%;
   transform: translateX(-50%);
   background: rgba(0, 0, 0, 0.9);
@@ -119,7 +113,6 @@ h1 {
   padding: 8px 12px;
   border-radius: 4px;
   white-space: pre-wrap;
-  /* Allow multiline */
   font-size: 11px;
   line-height: 140%;
   text-align: left;
@@ -134,7 +127,6 @@ h1 {
 .crane-tower {
   width: 40px;
   height: 300px;
-  /* Approximate height matching rack */
   background: #ffc107;
   color: #000;
   display: flex;
@@ -148,24 +140,32 @@ h1 {
   letter-spacing: 5px;
 }
 
-/* --- CONTROL CARDS --- */
 .control-panel {
   display: flex;
-  gap: 20px;
+  gap: 24px;
   justify-content: center;
   flex-wrap: wrap;
-  padding: 0 20px;
+  /* Allows wrapping */
+  padding: 0 40px;
+  max-width: 1400px;
+  margin: 0 auto;
 }
 
 .control-card {
   background-color: #2a2a40;
   padding: 25px;
-  border-radius: 12px;
-  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-  width: 30%;
+  border-radius: 16px;
+  /* More rounded for premium feel */
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  flex: 1 1 45%;
+  /* Grow, Shrink, Basis ~45% -> Forces 2 per row */
+  min-width: 400px;
+  /* Prevent squishing */
   border: 1px solid #444;
   color: #ccc;
-  transition: transform 0.2s;
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: flex;
+  flex-direction: column;
 }
 
 .control-card:hover {
