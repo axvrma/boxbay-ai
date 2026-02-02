@@ -6,18 +6,18 @@ class GridState {
     _initializeGrid () {
         const slots = [];
         const grids = ['A', 'B'];
-        const rows = 4;
-        const columns = 3;
+        const columns = 4; // Horizontal Stacks (X-Axis)
+        const rows = 3;    // Vertical Tiers (Y-Axis)
 
         grids.forEach(grid => {
-            for (let r = 1; r <= rows; r++) {
-                for (let c = 1; c <= columns; c++) {
+            for (let c = 1; c <= columns; c++) {
+                for (let r = 1; r <= rows; r++) {
                     slots.push({
-                        id: `Grid:${grid}-Row:${r}-Column:${c}`,
+                        id: `Grid:${grid}-Col:${c}-Row:${r}`, // ID: Grid-Col(X)-Row(Y)
                         grid: grid,
-                        row: r,
                         column: c,
-                        status: 'available', // available, occupied
+                        row: r,
+                        status: 'available',
                         containerId: null,
                         expectedOutboundDate: null,
                         weight: null,

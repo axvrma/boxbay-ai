@@ -1,45 +1,64 @@
-# BoxBay Digital Twin: POC Workflow Design (HBS Logic)
+# BoxBay Digital Twin: Smart Architecture (HBS Logic)
 
 ## Overview
-This document outlines the logic for the BoxBay High Bay Storage system. Since every container is directly accessible (no reshuffling), the AI focuses purely on **Energy Arbitrage** and **Time Optimization**.
+BoxBay resolves the "Re-Shuffling Problem" of traditional stacking by providing direct access to every container. This allows the system to optimize for **Energy Efficiency** and **Predictive Placement** rather than just accessibility.
 
 ---
 
-## Scenario 1: Energy-Centric Inbound (Direct Access Logic)
-**Goal:** Select the rack slot that offers the best **Net Energy ROI**, treating the rack like a battery.
+## Scenario 1: Predictive Smart Inbound
+**Goal:** Optimize slot allocation based on **Predicted Dwell Time** (how long it stays) and **Energy efficiency** ($E=mgh$).
 
-### The Workflow
-1.  **Trigger:** Container arrives at **Transfer Tray**.
-2.  **Data Ingestion:** Node.js gets `{ContainerID, Weight, ReceiverID}`.
-3.  **The "Energy Contest" (Brain B):**
-    * Node.js queries the **Grid State** to find *all* empty slots.
-    * **The Simplified AI Loop:**
-        * Since there is no reshuffling, the AI doesn't care about "blocking" other boxes.
-        * It filters slots based on **Constraint:** `Max_Crane_Travel_Time` (Don't pick a slot so far away that it bottlenecks throughput).
-        * **The Calculation:** For every valid slot, it calculates:
-            $$Net\_kWh = E_{lift\_consumption} - (E_{lower\_recovery} \times \eta_{regen})$$
-            *(Where $E_{lower\_recovery}$ is calculated based on the future retrieval)*
-    * **Strategy:**
-        * **Heavy Box:** Prefer lower tiers (Minimize Lift Cost) OR very high tiers (Maximize Regen) *if* the math proves the Regen efficiency > Lift Inefficiency.
-        * **Light Box:** Fill the "energy-expensive" slots (Middle/High) since they cost less to lift.
+### The Workflow (End-to-End)
+
+1.  **User Input (Dashboard):**
+    *   **Variables:** Container Weight, Receiver ID.
+    *   **Optional:** Inbound/Outbound Date.
+    *   **Action:** Click "Optimize".
+
+2.  **Orchestrator Logic (Node.js):**
+    *   `POST /api/inbound/optimize`
+    *   **Step A: Check Date**
+        *   If the user *provides* a date, calculate `Dwell Days` directly.
+        *   If the user *omits* the date, call **Brain A (Predictor)**.
+    *   **Step B: Brain A (Prediction Model)**
+        *   **Input:** Receiver ID, Weight, Commodity.
+        *   **Model:** XGBoost Regressor (trained on synthetic logistics data).
+        *   **Logic:**
+            *   "Speedy Motors" -> Fast Mover (~2 days).
+            *   "LongTerm Storage" -> Slow Mover (~15 days).
+        *   **Output:** Predicted `Dwell Days`.
+    *   **Step C: Brain B (Allocation Engine)**
+        *   **Input:** `Dwell Days`, Weight, Candidate Slots.
+        *   **Logic:** Physics + Strategy.
+
+3.  **The "Energy Contest" (Brain B Logic):**
+    *   **Physics Calculation:**
+        $$Net\_kWh = E_{lift} - (E_{regen} \times \eta_{eff})$$
+        *   Lifting higher costs more energy ($mgh$).
+    *   **Strategic Tiering (The BoxBay Advantage):**
+        *   **Fast Movers (< 3 Days):** MUST go to **Row 1 (Bottom)**. Least energy to access frequent items.
+        *   **Slow Movers (> 7 Days):** MUST go to **Row 3 (Top)**. Store-and-forget logic. Higher energy cost upfront is acceptable for long storage.
+        *   **Average Movers:** **Row 2 (Middle)**.
+    *   **Penalty Enforcement:**
+        *   A Strategy Penalty ($2.0 \text{ kWh}$) is applied if a slot is in the "Wrong Row" for the container's dwell profile.
+        *   This overrides the pure physics cost, forcing strict adherence to the tiering strategy.
+
 4.  **Execution:**
-    * AI returns the best slot.
-    * Unity executes the move.
-    * **Dashboard:** Shows "Net Energy Optimized: No Reshuffling Risk."
+    *   **Grid State:** Slot is marked `occupied`.
+    *   **Dashboard:**
+        *   Tooltips display: Receiver, Weight, Predicted Out Date.
+        *   Graph shows Energy Savings vs. Random placement.
 
 ---
 
-## Scenario 2: GPS-Triggered Pre-Fetch (Just-in-Time)
-**Goal:** Retrieve the container from its rack so it reaches the dock *exactly* when the truck arrives.
+## Scenario 2: Just-in-Time Retrieval (GPS)
+**Goal:** Retrieve the container so it hits the transfer tray exactly when the truck arrives ($Wait\_Time = 0$).
 
 ### The Workflow
-1.  **Tracking:** Background service tracks Truck GPS.
-2.  **Time Calculation (Simplified):**
-    * Since access is direct, `Retrieval_Time` is deterministic physics:
-        $$Time = \max \left( \frac{Height}{V_{hoist}}, \frac{Distance}{V_{trolley}} \right) + T_{buffer}$$
-3.  **The Trigger:**
-    * `IF (Truck_ETA <= Retrieval_Time)` -> **Dispatch Crane**.
-4.  **Result:**
-    * Crane picks the box from the rack.
-    * Lowers it to the delivery point.
-    * **Zero Wait Time:** Truck stops, crane locks, box drops.
+1.  **Tracking:** Background service/slider simulates Truck GPS distance (km).
+2.  **Physics Trigger:**
+    *   The system knows the exact physical properties of the crane (Hoist Speed, Trolley Speed).
+    *   It calculates: $T_{retrieval} = \max(T_{hoist}, T_{trolley})$.
+3.  **Action:**
+    *   When $T_{truck\_arrival} \le T_{retrieval} + T_{buffer}$, dispatch the crane.
+    *   The crane retrieves the box *while* the truck is parking.

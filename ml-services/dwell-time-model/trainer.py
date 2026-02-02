@@ -16,7 +16,7 @@ def train_dwell_time_model():
 
     if not os.path.exists(data_path):
         print(f"❌ Error: File not found at {data_path}")
-        print("   -> Run 'python shared/generate_data.py' first.")
+        print("   -> Run 'python ../shared/generate_synthetic_logistics_data.py' first.")
         return
 
     df = pd.read_csv(data_path)

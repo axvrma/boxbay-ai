@@ -12,7 +12,8 @@ exports.optimizeInbound = async (req, res) => {
         const gridState = require('../models/gridState');
         const candidateSlots = gridState.getAvailableSlots().map(s => ({
             slot_id: s.id,
-            column: s.column
+            column: s.column, // Horizontal
+            row: s.row        // Vertical (Height)
         }));
 
         if (candidateSlots.length === 0) {
@@ -21,14 +22,40 @@ exports.optimizeInbound = async (req, res) => {
 
         // Calculate Dwell Days
         let dwellDays = 3.5; // Default average
+        let calculatedOutboundDate = outboundDate; // Start with user input if existing
+
         if (outboundDate) {
+            // CASE 1: User provided a date
             const now = new Date();
             const out = new Date(outboundDate);
             const diffTime = Math.abs(out - now);
             dwellDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+            console.log(`📅 User Date Provided. Dwell: ${dwellDays} days`);
+        } else {
+            // CASE 2: No Date -> ASK BRAIN A (Prediction Model)
+            console.log("🤖 No Date provided. Asking AI for prediction...");
+            try {
+                const predRes = await axios.post(`${PYTHON_SERVICE}/predict-date`, {
+                    weight,
+                    receiverId,
+                    commodity: "Auto"
+                });
+                if (predRes.data && predRes.data.predictedDate) {
+                    dwellDays = predRes.data.predictedDate;
+
+                    // CALCULATE DATE STRING FOR UI
+                    const futureDate = new Date();
+                    futureDate.setDate(futureDate.getDate() + Math.ceil(dwellDays));
+                    calculatedOutboundDate = futureDate.toISOString().split('T')[0];
+
+                    console.log(`🧠 AI Predicted Dwell: ${dwellDays} days -> Out: ${calculatedOutboundDate}`);
+                }
+            } catch (pErr) {
+                console.warn("⚠️ Prediction Service unavailable, using default.", pErr.message);
+            }
         }
 
-        // 2. Call Python Brain
+        // 2. Call Python Brain B (Physics/Allocation)
         const response = await axios.post(`${PYTHON_SERVICE}/allocate-slot`, {
             weight,
             receiverId,
@@ -40,7 +67,8 @@ exports.optimizeInbound = async (req, res) => {
         const { targetSlot, predictedNetKwh, savings, details } = response.data;
 
         // 3. Mark Slot as Occupied in State
-        const success = gridState.occupySlot(targetSlot, containerId, outboundDate, weight, receiverId);
+        // IMPORTANT: Use calculatedOutboundDate (which is never null now hopefully)
+        const success = gridState.occupySlot(targetSlot, containerId, calculatedOutboundDate, weight, receiverId);
         if (!success) {
             console.warn(`⚠️ Warning: Slot ${targetSlot} was double-booked or invalid.`);
         }

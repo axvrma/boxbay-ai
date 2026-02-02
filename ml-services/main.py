@@ -37,7 +37,8 @@ def load_artifacts():
 # --- INPUT SCHEMAS ---
 class CandidateSlot(BaseModel):
     slot_id: str
-    column: int
+    column: int # Horizontal (X)
+    row: int    # Vertical (Y / Height)
 
 class InboundData(BaseModel):
     weight: float       # in Tons
@@ -103,17 +104,8 @@ async def allocate_slot(data: InboundData):
     EFFICIENCY_REGEN = 0.65
     JOULES_TO_KWH = 2.77778e-7
 
-    EFFICIENCY_REGEN = 0.65
-    JOULES_TO_KWH = 2.77778e-7
-
-    # Use provided slots or fallback to mock (for testing)
-    candidate_slots = data.candidate_slots if data.candidate_slots else [
-        CandidateSlot(slot_id="Grid:A-Row:1-Column:1", column=1),
-        CandidateSlot(slot_id="Grid:A-Row:2-Column:3", column=3),
-        CandidateSlot(slot_id="Grid:A-Row:1-Column:5", column=5),
-        CandidateSlot(slot_id="Grid:A-Row:3-Column:8", column=8),
-        CandidateSlot(slot_id="Grid:A-Row:2-Column:11", column=11)
-    ]
+    # Use provided slots or fallback
+    candidate_slots = data.candidate_slots if data.candidate_slots else []
 
     best_slot = None
     min_net_kwh = float('inf')
@@ -121,29 +113,30 @@ async def allocate_slot(data: InboundData):
 
     mass_kg = data.weight * 1000
 
-    # --- STRATEGY: TIERED ALLOCATION REINFORCED ---
-    # Fast Movers (< 3 Days) -> Bottom (Col 1)
-    # Average Movers (3 - 7 Days) -> Middle (Col 2)
-    # Slow Movers (> 7 Days) -> Top (Col 3)
+    # --- STRATEGY: TIERED ALLOCATION ---
+    # Fast Movers -> Bottom (Row 1)
+    # Slow Movers -> Top (Row 3)
 
-    target_column = 2 # Default Middle
+    target_row = 2 # Default Middle
     dwell = data.dwell_days
 
     if dwell < 3.0:
-        target_column = 1
+        target_row = 1
     elif dwell > 7.0:
-        target_column = 3
+        target_row = 3
 
-    print(f"🧠 AI Strategy: Dwell {dwell} days -> Targeting Column {target_column}")
+    print(f"🧠 AI: Dwell {dwell} days -> Target Row {target_row}")
 
-    # Prioritize slots in target column, but fallback if full
-    sorted_slots = sorted(candidate_slots, key=lambda s: 0 if s.column == target_column else 1)
+    # Prioritize slots in target row
+    sorted_slots = sorted(candidate_slots, key=lambda s: 0 if s.row == target_row else 1)
 
     for slot in sorted_slots:
-        # Pydantic model access
+        row = slot.row
         column = slot.column
         slot_id = slot.slot_id
-        height = (column - 1) * TIER_HEIGHT_METERS
+
+        # HEIGHT depends on ROW (1-based)
+        height = (row - 1) * TIER_HEIGHT_METERS
 
         # Energy In (Lift)
         potential_energy = mass_kg * GRAVITY * height
@@ -155,9 +148,10 @@ async def allocate_slot(data: InboundData):
         # Net
         net_kwh = kwh_in - kwh_out
 
-        # Penalize non-target columns slightly to encourage strategy
-        if column != target_column:
-            net_kwh += 0.05 # Penalty kWh
+        # Strategy Penalty
+        # Physics Cost to Row 3 is ~0.22 kWh. Penalty must be > 0.22 to force strategy.
+        if row != target_row:
+            net_kwh += 2.0 # Major Penalty to enforce strategy over raw energy
 
         if net_kwh < min_net_kwh:
             min_net_kwh = net_kwh

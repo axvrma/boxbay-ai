@@ -170,22 +170,25 @@ function App () {
 
     const columns = [];
 
-    // Add Row Labels (Vertical Axis) - Columns 3, 2, 1
+    // Add Row Labels (Vertical Axis) - Row 3, 2, 1
     columns.push(
       <div key="labels" className="rack-column" style={{ justifyContent: 'space-between', paddingBottom: '20px', marginRight: '10px' }}>
-        <div style={{ height: '70px', display: 'flex', alignItems: 'center', color: '#666', fontSize: '0.8rem', justifyContent: 'flex-end', fontWeight: 'bold' }}>Col 3</div>
-        <div style={{ height: '70px', display: 'flex', alignItems: 'center', color: '#666', fontSize: '0.8rem', justifyContent: 'flex-end', fontWeight: 'bold' }}>Col 2</div>
-        <div style={{ height: '70px', display: 'flex', alignItems: 'center', color: '#666', fontSize: '0.8rem', justifyContent: 'flex-end', fontWeight: 'bold' }}>Col 1</div>
+        <div style={{ height: '70px', display: 'flex', alignItems: 'center', color: '#666', fontSize: '0.8rem', justifyContent: 'flex-end', fontWeight: 'bold' }}>Row 1</div>
+        <div style={{ height: '70px', display: 'flex', alignItems: 'center', color: '#666', fontSize: '0.8rem', justifyContent: 'flex-end', fontWeight: 'bold' }}>Row 2</div>
+        <div style={{ height: '70px', display: 'flex', alignItems: 'center', color: '#666', fontSize: '0.8rem', justifyContent: 'flex-end', fontWeight: 'bold' }}>Row 3</div>
         <div style={{ height: '20px' }}></div>
       </div>
     );
 
-    for (let r = 1; r <= rows; r++) {
-      // Sort by Column (vertical height)
-      const rowSlots = gridSlots.filter(s => s.row === r).sort((a, b) => a.column - b.column);
+    const numColumns = 4;
+
+    for (let c = 1; c <= numColumns; c++) {
+      // Filter by Column (Horizontal Stack)
+      const stackSlots = gridSlots.filter(s => s.column === c).sort((a, b) => a.row - b.row);
+
       columns.push(
-        <div key={r} className="rack-column">
-          {rowSlots.map(slot => {
+        <div key={c} className="rack-column">
+          {stackSlots.map(slot => {
             // Build Tooltip text
             let tooltipText = `${slot.id}`;
             if (slot.status === 'occupied') {
@@ -199,11 +202,11 @@ function App () {
                 className={`slot ${slot.status}`}
                 data-tooltip={tooltipText}
               >
-                {slot.status === 'occupied' ? slot.containerId : `${gridName}${r}${slot.column}`}
+                {slot.status === 'occupied' ? slot.containerId : `${gridName}${c}${slot.row}`}
               </div>
             );
           })}
-          <div style={{ textAlign: 'center', fontSize: '10px', marginTop: '5px', color: '#888', fontWeight: 'bold' }}>Row {r}</div>
+          <div style={{ textAlign: 'center', fontSize: '10px', marginTop: '5px', color: '#888', fontWeight: 'bold' }}>Col {c}</div>
         </div>
       );
     }
