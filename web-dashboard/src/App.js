@@ -30,6 +30,10 @@ function App () {
   // State for Grid Visualization
   const [gridState, setGridState] = useState([]);
 
+  // State for Scenario 2: Housekeeping
+  const [housekeepingPlan, setHousekeepingPlan] = useState([]);
+  const [isHousekeepingLoading, setIsHousekeepingLoading] = useState(false);
+
   useEffect(() => {
     // Debugging: Log connection attempts
     socket.on('connect_error', (err) => {
@@ -129,6 +133,21 @@ function App () {
   };
 
   // --- HANDLERS ---
+  const handleHousekeeping = async () => {
+    setIsHousekeepingLoading(true);
+    setHousekeepingPlan([]);
+    try {
+      const res = await axios.post(`${SOCKET_SERVER}/api/housekeeping`);
+      setHousekeepingPlan(res.data.moves);
+      addLog(`🧹 Housekeeping initiated. Plan: ${res.data.moves.length} moves.`);
+    } catch (err) {
+      console.error(err);
+      setHousekeepingPlan(["❌ Error executing housekeeping."]);
+      addLog(`❌ Housekeeping Error: ${err.message}`);
+    }
+    setIsHousekeepingLoading(false);
+  };
+
   const handleInbound = async () => {
     // FAILSAFE 1: Force re-registration right before asking
     console.log("Re-registering as dashboard...");
@@ -324,9 +343,95 @@ function App () {
           )}
         </div>
 
-        {/* PANEL 2: GPS CONTROLS */}
+        {/* PANEL 2: HOUSEKEEPING CONTROL */}
         <div className="control-card">
-          <h2>Scenario 2: Just-in-Time Retrieval</h2>
+          <h2>Scenario 2: Housekeeping</h2>
+          <p style={{ fontSize: '0.9rem', color: '#aaa', marginBottom: '15px' }}>
+            Optimize grid by reshuffling misplaced containers (e.g. Fast Movers in Top Rows).
+          </p>
+
+          <button
+            className="optimize-btn"
+            onClick={handleHousekeeping}
+            disabled={isHousekeepingLoading}
+            style={{ background: isHousekeepingLoading ? '#555' : '#FF9800', width: '100%', marginBottom: '15px' }}
+          >
+            {isHousekeepingLoading ? 'Analyzing Grid...' : 'Start Housekeeping Analysis'}
+          </button>
+
+          {/* Structured Output */}
+          <div style={{
+            background: '#121212',
+            padding: '10px',
+            borderRadius: '8px',
+            fontFamily: 'Inter, sans-serif',
+            fontSize: '0.85rem',
+            color: '#e0e0e0',
+            minHeight: '150px',
+            maxHeight: '300px',
+            overflowY: 'auto',
+            border: '1px solid #333',
+            boxShadow: 'inset 0 2px 4px rgba(0,0,0,0.5)',
+            textAlign: 'left' // Explicit Left Indentation
+          }}>
+            {housekeepingPlan.length === 0 ? (
+              <div style={{ textAlign: 'center', color: '#555', marginTop: '40px' }}>
+                <span style={{ fontSize: '2rem' }}>🧹</span><br />
+                Ready to analyze grid logic...
+              </div>
+            ) : (
+              housekeepingPlan.map((op, i) => {
+                if (op.type === 'SWAP') {
+                  return (
+                    <div key={i} style={{ marginBottom: '12px', background: '#1E1E2E', borderRadius: '6px', overflow: 'hidden', border: '1px solid #333' }}>
+                      <div style={{
+                        padding: '8px 12px',
+                        background: 'rgba(255, 152, 0, 0.15)',
+                        color: '#FFB74D',
+                        fontWeight: 'bold',
+                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                        display: 'flex', alignItems: 'center'
+                      }}>
+                        <span style={{ marginRight: '8px' }}>🔄</span>
+                        <span dangerouslySetInnerHTML={{ __html: op.title }}></span>
+                      </div>
+                      <div style={{ padding: '8px 12px', background: '#15151A' }}>
+                        {op.steps.map((step, idx) => (
+                          <div key={idx} style={{
+                            marginBottom: '4px',
+                            color: '#ccc',
+                            fontSize: '0.8rem',
+                            display: 'flex', alignItems: 'center'
+                          }}>
+                            <span style={{ color: '#666', marginRight: '8px', minWidth: '15px' }}>{idx + 1}.</span>
+                            <span dangerouslySetInnerHTML={{ __html: step }}></span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                } else if (op.type === 'MOVE') {
+                  return (
+                    <div key={i} style={{ marginBottom: '8px', padding: '8px 12px', background: '#1A231A', borderRadius: '4px', borderLeft: '3px solid #4CAF50', color: '#A5D6A7' }}>
+                      <span dangerouslySetInnerHTML={{ __html: op.message }}></span>
+                    </div>
+                  );
+                } else {
+                  // INFO / ERROR / SUCCESS
+                  return (
+                    <div key={i} style={{ marginBottom: '8px', padding: '8px 12px', color: '#888' }}>
+                      <span dangerouslySetInnerHTML={{ __html: op.message || JSON.stringify(op) }}></span>
+                    </div>
+                  );
+                }
+              })
+            )}
+          </div>
+        </div>
+
+        {/* PANEL 3: GPS CONTROLS */}
+        <div className="control-card">
+          <h2>Scenario 3: Just-in-Time Retrieval</h2>
           <p>Truck Distance: <strong>{distance} km</strong></p>
           <input
             type="range"

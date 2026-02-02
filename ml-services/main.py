@@ -5,6 +5,8 @@ import joblib
 import pandas as pd
 import numpy as np
 import os
+import math
+from datetime import datetime
 
 app = FastAPI()
 
@@ -168,6 +170,147 @@ async def allocate_slot(data: InboundData):
         "savings": "$0.45", # Mock currency value
         "details": best_stats
     }
+
+# --- BRAIN C: HOUSEKEEPING (OPTIMIZATION) ---
+class GridSlot(BaseModel):
+    id: str
+    grid: str
+    row: int
+    column: int
+    status: str # occupied, available
+    containerId: Optional[str] = None
+    expectedOutboundDate: Optional[str] = None
+    receiverId: Optional[str] = None
+
+class GridState(BaseModel):
+    slots: List[GridSlot]
+
+@app.post("/housekeeping")
+async def optimize_grid(data: GridState):
+    """
+    Scans the grid for misplaced containers and returns a plan to fix them.
+    Misplaced = Fast Mover in Row 3, Slow Mover in Row 1.
+    """
+    moves = []
+
+    # 1. Parse dates and classify containers
+    now = datetime.now()
+
+    occupied = [s for s in data.slots if s.status == 'occupied']
+    empty = [s for s in data.slots if s.status == 'available']
+
+    misplaced = []
+
+    for slot in occupied:
+        if not slot.expectedOutboundDate:
+            continue
+
+        try:
+            # Handle potential ISO format or simple date
+            d_str = slot.expectedOutboundDate.split('T')[0]
+            out_date = datetime.strptime(d_str, "%Y-%m-%d")
+            dwell_remaining = (out_date - now).days
+        except:
+            continue
+
+        # Determine Optimal Row
+        optimal_row = 2
+        profile = "MEDIUM"
+
+        if dwell_remaining < 3:
+            optimal_row = 1
+            profile = "FAST"
+        elif dwell_remaining > 7:
+            optimal_row = 3
+            profile = "SLOW"
+
+        # Check Violation
+        if slot.row != optimal_row:
+            severity = abs(slot.row - optimal_row)
+            if severity >= 2: # Only fix max error (1 vs 3)
+                misplaced.append({
+                    "slot": slot,
+                    "target_row": optimal_row,
+                    "profile": profile
+                })
+
+    # 2. Generate Moves
+    if not misplaced:
+        return {"moves": ["✅ Grid is optimized. No reshuffling needed."]}
+
+    print(f"🧹 Housekeeping: Found {len(misplaced)} severe violations.")
+
+    # Simple Greedy Swap Strategy
+    # If no empty slot, can we swap? For POC, just list moves to buffer or empty.
+
+    for item in misplaced:
+        origin = item['slot']
+        target_row = item['target_row']
+        profile = item['profile']
+
+        # 1. Try Simple Move (Empty Slot in Target Row)
+        candidate = None
+        for cand in empty:
+            if cand.row == target_row:
+                candidate = cand
+                break
+
+        if candidate:
+            moves.append(f"MOVE {origin.containerId} ({profile}) from {origin.id} -> {candidate.id}")
+            empty.remove(candidate)
+            continue
+
+        # 2. Complex Swap via Transfer Tray (Target Row is FULL)
+        # Find a container in Target Row that is 'Blocking' us.
+        # Ideally, find a "Reverse Misplaced" item (e.g. Slow in Row 1 if we are Fast).
+
+        swap_partner = None
+        current_occupied_in_target = [s for s in occupied if s.row == target_row]
+
+        # Priority: Find a PERFECT SWAP partner (e.g. Slow in Row 1)
+        for p in current_occupied_in_target:
+            p_profile = "UNKNOWN"
+            # Estimate partner profile (simplified logic)
+            if p.expectedOutboundDate:
+                try:
+                    d_str = p.expectedOutboundDate.split('T')[0]
+                    od = datetime.strptime(d_str, "%Y-%m-%d")
+                    dr = (od - now).days
+                    if dr < 3: p_profile = "FAST"
+                    elif dr > 7: p_profile = "SLOW"
+                    else: p_profile = "MEDIUM"
+                except: pass
+
+            if profile == "FAST" and target_row == 1 and p_profile == "SLOW":
+                swap_partner = p
+                break # Found perfect swap!
+            if profile == "SLOW" and target_row == 3 and p_profile == "FAST":
+                swap_partner = p
+                break # Found perfect swap!
+
+        # Fallback: Just pick FIRST available blocker if no perfect swap found
+        if not swap_partner and current_occupied_in_target:
+            swap_partner = current_occupied_in_target[0]
+
+        if swap_partner:
+            print(f"🔄 Using Transfer Tray to swap {origin.containerId} (needs Row {target_row}) with {swap_partner.containerId}")
+
+            moves.append(f"🔄 SWAP SEQUENCE (via Transfer Tray):")
+            moves.append(f"  1. MOVE BLOCKER {swap_partner.containerId} (Row {target_row}) -> BUFFER_TRAY")
+            moves.append(f"  2. MOVE TARGET {origin.containerId} ({profile}) -> {swap_partner.id}")
+            moves.append(f"  3. MOVE BLOCKER {swap_partner.containerId} (from Buffer) -> {origin.id}")
+
+            # remove partner from available blockers for this iteration (heuristic)
+            if swap_partner in current_occupied_in_target:
+                 # In a real loop we'd update 'data.slots', here we just avoid re-using same partner blindly
+                 pass
+        else:
+             moves.append(f"⚠️ Gridlock: Cannot move {origin.containerId}. No partners found.")
+
+    if not moves:
+        moves.append("No feasible moves found.")
+
+    return {"moves": moves}
 
 # --- METADATA ENDPOINTS ---
 @app.get("/receivers")

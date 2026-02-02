@@ -51,7 +51,19 @@ BoxBay resolves the "Re-Shuffling Problem" of traditional stacking by providing 
 
 ---
 
-## Scenario 2: Just-in-Time Retrieval (GPS)
+## Scenario 2: Smart Housekeeping (Reshuffling)
+**"The Grid That Cleans Itself"**
+- **Problem**: Over time, the grid gets disorganized (entropy). Fast movers get buried under slow movers due to rushed inbound operations.
+- **AI Solution (Brain C)**:
+    - Scans the grid for violations (e.g., Fast Mover in Row 3).
+    - **Complex Swap Logic (The BoxBay Dance)**:
+        - If the target row is full, the AI executes a **3-Step Swap** using the **Transfer Tray** as a buffer.
+        - `Step 1`: Move Blocker (Slow Mover) -> Buffer Tray.
+        - `Step 2`: Move Target (Fast Mover) -> Blocker's Slot (Row 1).
+        - `Step 3`: Move Blocker (from Buffer) -> Target's Old Slot (Row 3).
+    - **UI Feature**: A "Beautiful Timeline" card that breaks down these complex moves into readable, highlighted steps (e.g., "🔄 Swap BOX_A ↔ BOX_B").
+
+### Scenario 3: Just-in-Time Retrieval (GPS Trigger)
 **Goal:** Retrieve the container so it hits the transfer tray exactly when the truck arrives ($Wait\_Time = 0$).
 
 ### The Workflow

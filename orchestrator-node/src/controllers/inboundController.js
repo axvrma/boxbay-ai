@@ -100,3 +100,29 @@ exports.optimizeInbound = async (req, res) => {
         res.status(500).json({ error: "Optimization failed" });
     }
 };
+
+exports.runHousekeeping = async (req, res) => {
+    try {
+        const gridState = require('../models/gridState');
+        const slots = gridState.getAllSlots().map(s => ({
+            ...s,
+            // Ensure outboundDate is just the YYYY-MM-DD string or null
+            // The model expects 'expectedOutboundDate'
+        }));
+
+        console.log("🧹 Running Housekeeping Analysis...");
+
+        const response = await axios.post(`${PYTHON_SERVICE}/housekeeping`, {
+            slots: slots
+        });
+
+        const { moves } = response.data;
+        console.log(`🧹 Plan Generated: ${moves.length} steps.`);
+
+        res.json({ moves });
+
+    } catch (error) {
+        console.error("⚠️ Housekeeping Failed:", error.message);
+        res.status(500).json({ error: "Housekeeping failed" });
+    }
+};

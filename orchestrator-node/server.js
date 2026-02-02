@@ -50,7 +50,10 @@ app.set('io', io);
 // SCENARIO 1: Smart Inbound (Triggered when Box is on Tray)
 app.post('/api/inbound/optimize', inboundController.optimizeInbound);
 
-// SCENARIO 2: GPS Tracking (Triggered by Slider on UI)
+// SCENARIO 2: Housekeeping (Smart Reshuffling)
+app.post('/api/housekeeping', inboundController.runHousekeeping);
+
+// SCENARIO 3: GPS Tracking (Triggered by Slider on UI)
 app.post('/api/tracking/update', trackingController.updateGPS);
 
 // --- GRID MANAGEMENT ---
