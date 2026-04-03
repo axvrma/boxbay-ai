@@ -6,7 +6,7 @@ import json
 import os
 
 # --- CONFIGURATION ---
-NUM_SAMPLES = 5000
+NUM_SAMPLES = 10000
 
 # Resolve paths relative to this script (ml-services/shared/)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))

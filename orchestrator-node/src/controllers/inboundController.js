@@ -1,6 +1,14 @@
 const axios = require('axios');
 const PYTHON_SERVICE = process.env.PYTHON_ML_SERVICE || "http://localhost:8000";
 
+// Try to load metrics controller for energy logging
+let metricsController;
+try {
+    metricsController = require('./metricsController');
+} catch (e) {
+    console.warn('Metrics controller not available, energy logging disabled');
+}
+
 exports.optimizeInbound = async (req, res) => {
     const { containerId, weight, receiverId, outboundDate } = req.body;
     const io = req.app.get('io');
@@ -12,8 +20,8 @@ exports.optimizeInbound = async (req, res) => {
         const gridState = require('../models/gridState');
         const candidateSlots = gridState.getAvailableSlots().map(s => ({
             slot_id: s.id,
-            column: s.column, // Horizontal
-            row: s.row        // Vertical (Height)
+            column: s.column,
+            row: s.row
         }));
 
         if (candidateSlots.length === 0) {
@@ -21,18 +29,16 @@ exports.optimizeInbound = async (req, res) => {
         }
 
         // Calculate Dwell Days
-        let dwellDays = 3.5; // Default average
-        let calculatedOutboundDate = outboundDate; // Start with user input if existing
+        let dwellDays = 3.5;
+        let calculatedOutboundDate = outboundDate;
 
         if (outboundDate) {
-            // CASE 1: User provided a date
             const now = new Date();
             const out = new Date(outboundDate);
             const diffTime = Math.abs(out - now);
             dwellDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
             console.log(`📅 User Date Provided. Dwell: ${dwellDays} days`);
         } else {
-            // CASE 2: No Date -> ASK BRAIN A (Prediction Model)
             console.log("🤖 No Date provided. Asking AI for prediction...");
             try {
                 const predRes = await axios.post(`${PYTHON_SERVICE}/predict-date`, {
@@ -42,12 +48,9 @@ exports.optimizeInbound = async (req, res) => {
                 });
                 if (predRes.data && predRes.data.predictedDate) {
                     dwellDays = predRes.data.predictedDate;
-
-                    // CALCULATE DATE STRING FOR UI
                     const futureDate = new Date();
                     futureDate.setDate(futureDate.getDate() + Math.ceil(dwellDays));
                     calculatedOutboundDate = futureDate.toISOString().split('T')[0];
-
                     console.log(`🧠 AI Predicted Dwell: ${dwellDays} days -> Out: ${calculatedOutboundDate}`);
                 }
             } catch (pErr) {
@@ -63,37 +66,50 @@ exports.optimizeInbound = async (req, res) => {
             candidate_slots: candidateSlots
         });
 
-        // FIX: Extract 'details' so the graph can render
         const { targetSlot, predictedNetKwh, savings, details } = response.data;
 
         // 3. Mark Slot as Occupied in State
-        // IMPORTANT: Use calculatedOutboundDate (which is never null now hopefully)
         const success = gridState.occupySlot(targetSlot, containerId, calculatedOutboundDate, weight, receiverId);
         if (!success) {
             console.warn(`⚠️ Warning: Slot ${targetSlot} was double-booked or invalid.`);
         }
 
+        // 4. Log energy event for metrics
+        const slot = gridState.getAllSlots().find(s => s.id === targetSlot);
+        if (metricsController && slot) {
+            try {
+                metricsController.logEnergyEvent(containerId, targetSlot, 'inbound', slot.row, weight);
+            } catch (e) {
+                console.warn('Failed to log energy event:', e.message);
+            }
+        }
+
         console.log(`🤖 AI Selected: ${targetSlot} (Net: ${predictedNetKwh} kWh)`);
 
-        // 4. Send Instruction to Unity
+        // 5. Send Instruction to Unity
         io.to('unity').emit('inbound_task', {
             containerId,
             targetSlot,
             weight
         });
 
-        // 5. Update Dashboard (Include 'details' now!)
+        // 6. Update Dashboard
         io.to('dashboard').emit('prediction_alert', {
             containerId,
             predictedNetKwh,
             savings,
-            details // <--- THIS WAS MISSING
+            details,
+            dwellDays,
+            outboundDate: calculatedOutboundDate
         });
 
-        // 6. Broadcast Grid Update to Refresh UI instantly
+        // 7. Broadcast Grid Update
         io.to('dashboard').emit('grid_update', gridState.getAllSlots());
 
-        res.json({ status: 'Executing', targetSlot, predictedNetKwh });
+        // 8. Emit metrics update
+        io.to('dashboard').emit('metrics_update', { timestamp: new Date().toISOString() });
+
+        res.json({ status: 'Executing', targetSlot, predictedNetKwh, dwellDays });
 
     } catch (error) {
         console.error("⚠️ AI Service Failed:", error.message);

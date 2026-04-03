@@ -6,7 +6,7 @@ class GridState {
     _initializeGrid () {
         const slots = [];
         const grids = ['A', 'B'];
-        const columns = 4; // Horizontal Stacks (X-Axis)
+        const columns = 5; // Horizontal Stacks (X-Axis)
         const rows = 3;    // Vertical Tiers (Y-Axis)
 
         grids.forEach(grid => {

@@ -2,11 +2,13 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const axios = require('axios');
 require('dotenv').config();
 
 // Import Controllers
 const inboundController = require('./src/controllers/inboundController');
 const trackingController = require('./src/controllers/trackingController.js');
+const metricsController = require('./src/controllers/metricsController');
 
 const app = express();
 app.use(cors());
@@ -20,7 +22,8 @@ const io = new Server(server, {
     }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3001;
+const PYTHON_ML_SERVICE = process.env.PYTHON_ML_SERVICE || 'http://localhost:8000';
 
 // --- SOCKET.IO CONNECTION ---
 io.on('connection', (socket) => {
@@ -34,7 +37,6 @@ io.on('connection', (socket) => {
 
     // Unity sends actual energy data after a move
     socket.on('move_complete', (data) => {
-        // data: { containerId, actualEnergyUsed, regenRecovered }
         console.log(`🏗️ Move Complete. Net Energy: ${data.actualEnergyUsed - data.regenRecovered} kWh`);
         io.to('dashboard').emit('update_energy_log', data);
     });
@@ -64,17 +66,20 @@ app.get('/api/grid/status', (req, res) => {
     res.json(gridState.getAllSlots());
 });
 
-// --- PROXY ROUTES FOR SMART INBOUND ---
-const axios = require('axios'); // Ensure axios is required if using it here, but server.js didn't import it at top. Checking if needed.
-// Wait, axios is likely needed. Let's add it at the top or assume it's global? No, need to require it.
-// Checking imports: const express...
-// I should probably add const axios = require('axios'); at the top in a separate edit or inline it here if possible, but standard is top.
-// Let's add these routes.
+app.post('/api/grid/reset', (req, res) => {
+    gridState.resetGrid();
+    io.to('dashboard').emit('grid_update', gridState.getAllSlots());
+    res.json({ status: 'Grid reset successfully' });
+});
 
+// --- METRICS & ANALYTICS ---
+app.get('/api/metrics', metricsController.getMetrics);
+app.get('/api/metrics/energy', metricsController.getEnergyAnalytics);
+
+// --- PROXY ROUTES FOR ML SERVICE ---
 app.get('/api/receivers', async (req, res) => {
     try {
-        const axios = require('axios');
-        const response = await axios.get(`${process.env.PYTHON_ML_SERVICE || 'http://localhost:8000'}/receivers`);
+        const response = await axios.get(`${PYTHON_ML_SERVICE}/receivers`);
         res.json(response.data);
     } catch (err) {
         console.error("Error fetching receivers:", err.message);
@@ -84,8 +89,7 @@ app.get('/api/receivers', async (req, res) => {
 
 app.post('/api/inbound/predict', async (req, res) => {
     try {
-        const axios = require('axios');
-        const response = await axios.post(`${process.env.PYTHON_ML_SERVICE || 'http://localhost:8000'}/predict-date`, req.body);
+        const response = await axios.post(`${PYTHON_ML_SERVICE}/predict-date`, req.body);
         res.json(response.data);
     } catch (err) {
         console.error("Error fetching prediction:", err.message);
@@ -93,6 +97,19 @@ app.post('/api/inbound/predict', async (req, res) => {
     }
 });
 
+// --- HEALTH CHECK ---
+app.get('/api/health', (req, res) => {
+    res.json({ 
+        status: 'healthy', 
+        timestamp: new Date().toISOString(),
+        services: {
+            orchestrator: true,
+            mlService: PYTHON_ML_SERVICE
+        }
+    });
+});
+
 server.listen(PORT, () => {
     console.log(`🚀 Orchestrator running on http://localhost:${PORT}`);
+    console.log(`📡 ML Service expected at: ${PYTHON_ML_SERVICE}`);
 });
