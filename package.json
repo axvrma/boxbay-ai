@@ -1,0 +1,29 @@
+{
+  "name": "boxbay-ai",
+  "version": "3.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "workspaces": [
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web --",
+    "build": "npm run build --workspace apps/web",
+    "preview": "npm run preview --workspace apps/web --",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "lint": "npm run lint --workspace apps/web",
+    "generate:data": "python3 ml/generate_data.py",
+    "train:model": "python3 ml/train_models.py",
+    "export:model": "python3 ml/train_models.py --export-only",
+    "benchmark": "tsx scripts/benchmark.ts"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.65.1",
+    "tsx": "4.23.15",
+    "vitest": "5.1.2"
+  }
+}
