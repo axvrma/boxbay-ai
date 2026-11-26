@@ -1,0 +1,5 @@
+# Model validation
+
+Observed demand uses monthly loaded imports and exports. Each rolling-origin fit uses earlier observations only, including lagged volumes and past rolling means. Candidate selection and split-style empirical residual calibration use the 24 months in 2022–2023. Holdout uses 24 months in 2024–2025. The Engineering page displays model-specific error, bias, peak MAE and interval coverage. Numeric results are in the [model evidence](../../apps/web/public/evidence/models.json).
+
+The dwell model trains on synthetic arrivals before July 2024, calibrates on July–December 2024, and tests on 2025. New carrier IDs appear near the end of the generator timeline. Inputs exclude realized carrier delay, clearance, departure and actual dwell. Dwell inference estimates expected days with a symmetric residual interval capped at zero. The simple comparator adjusts the appointment by the training-set median delay. These error measures evaluate the generator's statistical relationships and support software validation. A pilot needs observed equipment and pickup data to test external validity.

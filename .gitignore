@@ -70,3 +70,12 @@ __pycache__/
 .venv
 env/
 venv/
+# BOXBAY AI 2.0 local state
+.boxbay/
+apps/web/dist/
+apps/web/.env.local
+data/sources/import/
+data/synthetic/
+.coverage
+.mypy_cache/
+.ruff_cache/

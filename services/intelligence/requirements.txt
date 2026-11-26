@@ -1,0 +1,4 @@
+-r requirements-runtime.txt
+scipy==1.15.3
+scikit-learn==1.6.1
+xgboost==2.1.4

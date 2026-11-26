@@ -1,0 +1,14 @@
+.git
+.venv
+.boxbay
+.env*
+**/__pycache__
+**/node_modules
+**/dist
+**/.pytest_cache
+web-dashboard
+orchestrator-node
+ml-services
+unity-simulation
+data/synthetic
+data/*.db*

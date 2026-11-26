@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "id": "pola-2010-2025-v1",
+      "name": "Monthly container statistics",
+      "publisher": "Port of Los Angeles",
+      "url": "https://portoflosangeles.org/business/statistics/container-statistics",
+      "retrieved": "2026-11-14",
+      "access": "Public and free of charge, publisher requests attribution",
+      "schema": "month, loaded_import_teu, empty_import_teu, loaded_export_teu, empty_export_teu",
+      "coverage": "2010-01 to 2025-12, 192 monthly observations",
+      "transforms": "Official yearly tables, monthly rows only, normalized decimal TEU, separate loaded and empty flows.",
+      "limitations": "Port-wide monthly marine TEU. Facility share, arrival timestamps, dwell, equipment and appointments are absent."
+    },
+    {
+      "id": "epa-egrid-camx-2023-rev2",
+      "name": "eGRID 2023 revised summary tables",
+      "publisher": "US Environmental Protection Agency",
+      "url": "https://www.epa.gov/system/files/documents/2025-06/summary_tables_rev2.pdf",
+      "retrieved": "2026-11-14",
+      "access": "Public US government data",
+      "schema": "region, reporting year, total output CO2e lb/MWh",
+      "coverage": "2023, CAMX",
+      "transforms": "429.983 lb/MWh × 0.45359237 / 1000 to kg CO2e/kWh",
+      "limitations": "Annual location-based generation average. Grid losses, marginal dispatch and time-of-use effects are excluded."
+    },
+    {
+      "id": "kaggle-accenture-candidate",
+      "name": "Accenture Supply Chain Resilience Challenge",
+      "publisher": "Accenture / UPC datathon",
+      "url": "https://www.kaggle.com/competitions/datathon-2022-upc-accenture/data",
+      "retrieved": "2026-11-14",
+      "access": "Competition data, verify participation and redistribution terms before download",
+      "schema": "Published orders fields include order_id, origin_port, 3pl, customs_procedure, logistic_hub, customer and product_id",
+      "coverage": "Dates and record counts not independently verified",
+      "transforms": "Metadata screening only",
+      "limitations": "Geographic match, missingness, container specificity and pickup coverage remain unverified. Excluded from models."
+    },
+    {
+      "id": "kaggle-supply-chain-candidate",
+      "name": "Supply Chain Logistics Problem workbook",
+      "publisher": "Kaggle contributor, underlying operator provenance unverified",
+      "url": "https://www.kaggle.com/code/enjegodinez/shipping-routes-and-cost-analysis-optimization/log",
+      "retrieved": "2026-11-14",
+      "access": "Public notebook metadata; underlying data reuse terms unverified",
+      "schema": "Notebook reports 9,215 order rows and 14 fields, including ORDER_DATE, ORIGIN_PORT, CARRIER, TPT and SERVICE_LEVEL",
+      "coverage": "Exact dates and geography not verified",
+      "transforms": "Notebook inspection only",
+      "limitations": "Anonymized routing and costs, undocumented terminal movement coverage, source completeness unverified. Excluded."
+    }
+  ]
+}

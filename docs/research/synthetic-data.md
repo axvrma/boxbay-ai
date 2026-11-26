@@ -1,0 +1,5 @@
+# Synthetic data platform
+
+The dwell generator samples months in proportion to observed loaded imports over its last five years. It disaggregates time within months and ties appointment lead to service category, weight to length, vessel schedules to delay, and pickups to appointments with carrier and administrative variation. Carrier cohorts, pickup delays and release events are synthetic. Validation checks unique IDs, chronological custody, TEU conversions, positive dwell and repeatability. Forecast validation compares public TEU to public TEU.
+
+The paired experiment generator has fixed synthetic fixture scale, configurable topology and seed. Vessel notices define clustered releases relative to the updated arrival time. Starting inventory has carrier appointments and delayed pickup requests. Later requests follow the seeded workload distribution. Outage fixtures are explicit schedule inputs shared by all policies. This setup is suitable for controlled comparisons. It does not estimate actual terminal queue or departure distributions.
