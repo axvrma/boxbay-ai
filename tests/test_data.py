@@ -28,12 +28,18 @@ class DatasetTests(unittest.TestCase):
                 manifest = json.loads((directory / "training/dataset-manifest.json").read_text())
                 self.assertEqual(manifest["sha256"]["containers.csv"], digests[-1])
                 self.assertEqual(manifest["dailyRecords"], 1826)
+                self.assertEqual((manifest["start"], manifest["end"]), ("2022-01-01", "2026-12-31"))
                 self.assertEqual(len(rows), 2000)
                 arrivals = [datetime.fromisoformat(row["arrivalTimestamp"]) for row in rows]
                 departures = [datetime.fromisoformat(row["departureTimestamp"]) for row in rows]
                 self.assertEqual(arrivals, sorted(arrivals))
                 self.assertTrue(all(a < d for a, d in zip(arrivals, departures, strict=True)))
                 self.assertTrue(all(a.utcoffset().total_seconds() == 14_400 for a in arrivals))
+                self.assertTrue(any(a.year == 2026 and d.date() < generator.CALIBRATION_START
+                                    for a, d in zip(arrivals, departures, strict=True)))
+                unseen = [a.date() for a, row in zip(arrivals, rows, strict=True) if int(row["receiverId"]) >= 10]
+                self.assertTrue(unseen)
+                self.assertGreaterEqual(min(unseen), generator.TEST_START)
                 self.assertEqual(len({row["containerId"] for row in rows}), len(rows))
                 self.assertTrue(all(int(row["grossWeightKg"]) <= (28_000 if row["sizeFt"] == "20" else 36_000)
                                     for row in rows))

@@ -19,6 +19,7 @@ export type Facility = {
 type Step = 'arrived' | 'predicted' | 'placed'
 export type State = {
   clock: number; capacity: number; cargoIndex: number; operation: Operating; floor: Facility; baseline: Facility
+  cells: readonly Slot[]
   step: Step; decision: Decision | null; comparison?: Prediction; override?: string; priorityOverride?: number; rates: Rates; notice: string
 }
 export type Plan = {
@@ -52,7 +53,7 @@ export function initialize(data: DemoData, bundle: Bundle, date = data.defaultDa
   const floor = seedFloor(data, bundle, clock, operation)
   return {
     clock, capacity: data.cells.length, operation, floor, baseline: structuredClone(floor), cargoIndex: 0, step: 'arrived',
-    decision: null, rates: data.rates, notice: '',
+    cells: data.cells, decision: null, rates: data.rates, notice: '',
   }
 }
 
@@ -81,12 +82,12 @@ export function incomingCargo(state: State, data: DemoData): Cargo | undefined {
 }
 
 export function rankings(
-  data: DemoData, facility: Facility, cargo: Cargo, operating: Operating, days: number, demand: Forecast,
+  cells: readonly Slot[], facility: Facility, cargo: Cargo, operating: Operating, days: number, demand: Forecast,
 ) {
   const slots = occupied(facility)
   const rejected: Record<string, number> = {}
   const choices: Ranking[] = []
-  for (const slot of data.cells) {
+  for (const slot of cells) {
     const block = placementRestriction(cargo, slot, operating, slots)
     if (block) {
       rejected[block] = (rejected[block] ?? 0) + 1
@@ -128,7 +129,19 @@ export function evaluate(state: State, data: DemoData, bundle: Bundle): Decision
   const prediction = predict(bundle, data, cargo, state.clock, operating)
   const demand = forecast(bundle, data, state.clock, operating)
   return { prediction, forecast: demand,
-    ...rankings(data, state.floor, cargo, operating, prediction.days, demand) }
+    ...rankings(state.cells, state.floor, cargo, operating, prediction.days, demand) }
+}
+
+export function setSlotRestriction(state: State, data: DemoData, slotId: string, blocked: boolean): State {
+  const slot = state.cells.find((cell) => cell.id === slotId)
+  if (!slot || slot.blocked === blocked) return state
+  const next = { ...state, cells: state.cells.map((cell) => cell === slot ? { ...cell, blocked } : cell) }
+  const cargo = incomingCargo(state, data)
+  if (state.step === 'predicted' && state.decision && cargo) {
+    next.decision = { ...state.decision, ...rankings(next.cells, state.floor, cargo,
+      conditions(state), state.decision.prediction.days, state.decision.forecast) }
+  }
+  return next
 }
 
 export function conditions(state: State): Operating {
@@ -141,8 +154,8 @@ export function makePlacement(facility: Facility, cargo: Cargo, slot: Slot): Pla
     legs: storeLegs(slot, cargo.kg, facility.stacker.at, facility.trayAt) }
 }
 
-export function makePickup(data: DemoData, facility: Facility, item: Stored, context: Operating): Plan | null {
-  const slot = data.cells.find((cell) => cell.id === item.slot)
+export function makePickup(cells: readonly Slot[], facility: Facility, item: Stored, context: Operating): Plan | null {
+  const slot = cells.find((cell) => cell.id === item.slot)
   if (!slot || slot.blocked || !craneOnline(slot.rack, context)) return null
   return { kind: 'pickup', target: slot, source: slot.id, cargo: item.cargo,
     legs: pickupLegs(slot, item.cargo.kg, facility.stacker.at, facility.trayAt) }
@@ -152,7 +165,7 @@ export function nextCompatiblePickup(state: State, data: DemoData) {
   const cargo = incomingCargo(state, data)
   if (!cargo) return undefined
   return state.floor.inventory.toSorted((a, b) => a.ready - b.ready).find((item) => {
-    const slot = data.cells.find((cell) => cell.id === item.slot)
+    const slot = state.cells.find((cell) => cell.id === item.slot)
     return slot && !restriction(cargo, slot, state.operation) && dubaiDate(Math.max(item.ready, state.clock)) <= data.dateMax
   })
 }
@@ -199,13 +212,14 @@ export function partialPlacement(state: State, data: DemoData, choice: Ranking) 
   const decision = state.decision
   const cargo = incomingCargo(state, data)
   if (!decision || !cargo || state.step !== 'predicted') throw Error('Run a prediction before placing cargo.')
-  const selected = decision.choices.find((candidate) => candidate.slot.id === choice.slot.id)
-  if (!selected || state.override && selected.slot.id !== state.override) throw Error('Choose a feasible storage position.')
-  const plan = makePlacement(state.floor, cargo, selected.slot)
+  const slot = state.cells.find((cell) => cell.id === choice.slot.id)
+  if (!slot || !decision.choices.some((candidate) => candidate.slot.id === slot.id) ||
+      state.override && slot.id !== state.override) throw Error('Choose a feasible storage position.')
+  const plan = makePlacement(state.floor, cargo, slot)
   const operating = conditions(state)
   const actualDwell = 2 + (state.cargoIndex * 37 % 67) / 10
   const floor = apply(state.floor, plan, operating, state.clock, decision.prediction.days, actualDwell)
-  const conventional = pickPolicy(rankings(data, state.baseline, cargo, operating, decision.prediction.days,
+  const conventional = pickPolicy(rankings(state.cells, state.baseline, cargo, operating, decision.prediction.days,
     decision.forecast).choices, 'first', decision.prediction.days)
   const baselinePlan = conventional ? makePlacement(state.baseline, cargo, conventional.slot) : null
   const baseFloor = baselinePlan ? apply(state.baseline, baselinePlan, operating, state.clock, decision.prediction.days, actualDwell) : state.baseline
@@ -219,10 +233,10 @@ export function partialPlacement(state: State, data: DemoData, choice: Ranking) 
 }
 
 export function partialPickup(state: State, data: DemoData, bundle: Bundle, item: Stored, dispatchAt = state.clock) {
-  const plan = makePickup(data, state.floor, item, state.operation)
+  const plan = makePickup(state.cells, state.floor, item, state.operation)
   if (!plan || dispatchAt < Math.max(state.clock, item.ready)) return null
   const other = state.baseline.inventory.find((entry) => entry.cargo.id === item.cargo.id && entry.ready <= dispatchAt)
-  const basePlan = other && makePickup(data, state.baseline, other, state.operation)
+  const basePlan = other && makePickup(state.cells, state.baseline, other, state.operation)
   const access = state.operation.cranes
   const seconds = movement(plan.legs, access).seconds
   const baselineSeconds = basePlan ? movement(basePlan.legs, access).seconds : 0
@@ -261,9 +275,9 @@ export function changeConditions(state: State, operation: Operating, date: strin
     step: state.step === 'predicted' ? 'arrived' as const : state.step, notice: '' }
 }
 
-export function projectedRetrieval(data: DemoData, facility: Facility, operating: Operating) {
+export function projectedRetrieval(cells: readonly Slot[], facility: Facility, operating: Operating) {
   const available = facility.inventory.flatMap((item) => {
-    const slot = data.cells.find((cell) => cell.id === item.slot)
+    const slot = cells.find((cell) => cell.id === item.slot)
     return slot && !slot.blocked && craneOnline(slot.rack, operating)
       ? [movement(pickupLegs(slot, item.cargo.kg, craneHome), operating.cranes).seconds] : []
   })

@@ -4,7 +4,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
@@ -12,9 +12,9 @@ import pandas as pd
 import xgboost
 from xgboost import XGBRegressor
 
-from generate_data import DATA, EVENTS, PUBLIC, SEED, event_for, write_json
+from generate_data import CALIBRATION_START, DATA, END, EVENTS, PUBLIC, SEED, START, TEST_START, event_for, write_json
 
-VERSION = "jebel-ali-2021-25-v1"
+VERSION = "jebel-ali-2022-26-v1"
 DWELL = ["Receiver dwell", "Receiver pickup reliability", "Receiver profile", "Commodity", "Trade lane",
          "Container size", "Gross weight", "Handling type", "Priority", "Customs clearance",
          "Month", "Day of week", "Seasonal window", "Days to event", "Days after event", "Inbound pressure",
@@ -47,8 +47,8 @@ def predict_portable(trees, vector):
 
 
 def fit(name, x, y, dates, schema, lead=0, complete=None, cohort=None, commodity=None):
-    valid_begin = np.datetime64("2024-07-01")
-    test_begin = np.datetime64("2025-01-01")
+    valid_begin = np.datetime64(CALIBRATION_START)
+    test_begin = np.datetime64(TEST_START)
     closes = complete if complete is not None else dates + np.timedelta64(lead, "D")
     train = (dates < valid_begin) & (closes < valid_begin) & np.isfinite(y)
     valid = (dates >= valid_begin) & (dates < test_begin) & (closes < test_begin) & np.isfinite(y)
@@ -112,6 +112,9 @@ def main(export_only):
     evidence_path = DATA / "training-evidence.json"
     parity_path = DATA / "training-parity.json"
     if not export_only:
+        def span(start, end):
+            return f"{start:%Y-%m} through {end - timedelta(days=1):%Y-%m}"
+
         records = pd.read_csv(DATA / "containers.csv")
         timestamps = pd.to_datetime(records["arrivalTimestamp"], format="ISO8601")
         dates = timestamps.dt.tz_localize(None).to_numpy(dtype="datetime64[D]")
@@ -139,7 +142,7 @@ def main(export_only):
             models[name], scores[name], parity[name] = fit(name, x, target.to_numpy(), dates, DEMAND, lead=lead)
         demo = json.loads((PUBLIC / "demo-data/jebel-ali.json").read_text())
         raw = []
-        for index, when, scenario in [(0,"2025-12-19",0),(0,"2025-03-13",0),(2,"2026-02-18",5),
+        for index, when, scenario in [(0,demo["defaultDate"],0),(0,"2026-03-10",0),(2,"2026-02-18",5),
                                       (31,"2028-11-11",7)]:
             cargo = demo["incoming"][index]
             context = demo["scenarios"][scenario]
@@ -149,8 +152,8 @@ def main(export_only):
         bundle = dict(schema=1, version=VERSION, models=models)
         evidence = dict(schema=1, version=VERSION, library=f"XGBoost {xgboost.__version__}",
                         source="Synthetic Jebel Ali operational data", parameters=PARAMETERS, metrics=scores,
-                        training="2021-01 through 2024-06", calibration="2024-07 through 2024-12",
-                        test="2025-01 through 2025-12", generatedFrom=json.loads((DATA/"dataset-manifest.json").read_text())["sha256"])
+                        training=span(START, CALIBRATION_START), calibration=span(CALIBRATION_START, TEST_START),
+                        test=span(TEST_START, END), generatedFrom=json.loads((DATA/"dataset-manifest.json").read_text())["sha256"])
         write_json(workspace, bundle)
         write_json(evidence_path, evidence)
         write_json(parity_path, dict(version=VERSION, vectors=parity, raw=raw))

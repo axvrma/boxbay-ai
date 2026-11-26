@@ -2,7 +2,7 @@ import type { Cargo, DemoData, Operating } from '../simulation/types'
 
 export const DAY = 86_400_000
 const HOUR = 3_600_000
-export const MODEL_VERSION = 'jebel-ali-2021-25-v1'
+export const MODEL_VERSION = 'jebel-ali-2022-26-v1'
 const modelNames = ['dwell', 'arrivals', 'pickups', 'week'] as const
 type ModelName = typeof modelNames[number]
 type Leaf = { nodeid: number; leaf: number }

@@ -17,6 +17,7 @@ export type Animation = { plan: Plan; start: number; duration: number }
 type Props = {
   data: DemoData; state: State; target?: Slot; selected?: string; onSelect: (id: string) => void
   camera: Camera; cameraVersion: number; animation?: Animation; manualTarget: boolean; map: boolean
+  busy: boolean; onRestrictSlot: (id: string, blocked: boolean) => void
 }
 type Box = { at: Point; size: Point; color: string; id?: string; tilt?: number }
 const backdrop = '#e9eff3'
@@ -107,12 +108,12 @@ function Cam({ view, cameraVersion, length }: { view: Camera; cameraVersion: num
 }
 const distanceLimit = (length: number) => Math.max(140, length * 3)
 
-function staticStructure(data: DemoData) {
+function staticStructure(cells: readonly Slot[]) {
   const frame: Box[] = []
   const empty: Box[] = []
-  const racks = [...new Set(data.cells.map((cell) => cell.rack))]
+  const racks = [...new Set(cells.map((cell) => cell.rack))]
   for (const rack of racks) {
-    const slots = data.cells.filter((cell) => cell.rack === rack)
+    const slots = cells.filter((cell) => cell.rack === rack)
     const top = Math.max(...slots.map((cell) => cell.y)) + 2
     const z = slots[0].z
     const side = Math.sign(z)
@@ -254,14 +255,14 @@ function Rails({ positions, color }: { positions: Point[]; color: string }) {
 }
 
 function Warehouse({ data, state, target, selected, onSelect, camera, cameraVersion, animation, manualTarget }: Props) {
-  const { frame, empty } = useMemo(() => staticStructure(data), [data])
+  const { frame, empty } = useMemo(() => staticStructure(state.cells), [state.cells])
   const bySlot = useMemo(() => occupied(state.floor), [state.floor])
-  const cargo = useMemo(() => data.cells.flatMap((cell) => {
+  const cargo = useMemo(() => state.cells.flatMap((cell) => {
     const item = bySlot.get(cell.id)
     if (!item || animation?.plan.cargo.id === item.cargo.id) return []
     return [{ at: point(cell), size: cargoSize(item.cargo.size),
       color: colors[category(item.days)], id: cell.id, item }]
-  }), [animation, bySlot, data.cells])
+  }), [animation, bySlot, state.cells])
   const ribs = useMemo(() => cargo.flatMap(({ at, size, color }) => {
     const [x,y,z] = at
     return Array.from({ length: Math.round(size[0] / .43) - 1 }, (_, i) => [-1,1].map((side) => ({
@@ -269,8 +270,8 @@ function Warehouse({ data, state, target, selected, onSelect, camera, cameraVers
       size: [.066, containerHeight - .18, .065] as Point, color,
     }))).flat()
   }), [cargo])
-  const length = Math.max(...data.cells.map((cell) => cell.x)) + columnPitch / 2
-  const height = Math.max(...data.cells.map((cell) => cell.y)) + 3.25
+  const length = Math.max(...state.cells.map((cell) => cell.x)) + columnPitch / 2
+  const height = Math.max(...state.cells.map((cell) => cell.y)) + 3.25
   const queue = state.step === 'placed' ? undefined : incomingCargo(state, data)
   const cargoColor = state.decision ? colors[state.decision.prediction.category] : colors.Fast
   const actualPickup = animation?.plan.kind === 'pickup'
@@ -280,7 +281,7 @@ function Warehouse({ data, state, target, selected, onSelect, camera, cameraVers
   const previewLegs = target && queue && !animation
     ? storeLegs(target, queue.kg, state.floor.stacker.at, state.floor.trayAt).filter((leg) => leg.cargo) : []
   const railStart = [handoff[0] - 7, .055] as const
-  const highlights = [target, data.cells.find((cell) => cell.id === selected)].filter((value): value is Slot => !!value)
+  const highlights = [target, state.cells.find((cell) => cell.id === selected)].filter((value): value is Slot => !!value)
   return <>
     <color attach="background" args={[backdrop]} />
     <fog attach="fog" args={[backdrop, 155, 300]} />
@@ -303,7 +304,7 @@ function Warehouse({ data, state, target, selected, onSelect, camera, cameraVers
         <meshBasicMaterial color="#d2a2fa" /></mesh>}
     </group>)}
     {(['A', 'B'] as const).map((rack) => {
-      const cells = data.cells.filter((slot) => slot.rack === rack)
+      const cells = state.cells.filter((slot) => slot.rack === rack)
       const z = cells[0].z
       const face = z + Math.sign(z) * (rackDepth / 2 + .12)
       return <group key={rack}>
@@ -351,20 +352,32 @@ class WebGLBoundary extends Component<{ children: ReactNode; fallback: ReactNode
   render() { return this.state.failed ? this.props.fallback : this.props.children }
 }
 
-function SlotMap({ data, state, selected, target, onSelect, manualTarget }: Props) {
+function SlotMap({ state, selected, target, onSelect, manualTarget, busy, onRestrictSlot }: Props) {
   const inventory = occupied(state.floor)
+  const selectedSlot = state.cells.find((cell) => cell.id === selected)
   return <div className="rack-map" aria-label="Two-dimensional storage map">
+    <div className="rack-map-actions">
+      <span role="status">{selectedSlot
+        ? <><strong>{selectedSlot.id}</strong> · {selectedSlot.blocked ? 'Restricted' :
+          inventory.has(selectedSlot.id) ? 'Occupied' : 'Open'}</>
+        : 'Select a slot to manage access.'}</span>
+      {selectedSlot && <button type="button" className="button subdued" disabled={busy}
+        onClick={() => onRestrictSlot(selectedSlot.id, !selectedSlot.blocked)}>
+        {selectedSlot.blocked ? 'Remove restriction' : 'Restrict slot'}
+      </button>}
+    </div>
     {(['A','B'] as const).map((rack) => {
-      const cells = data.cells.filter((cell) => cell.rack === rack)
+      const cells = state.cells.filter((cell) => cell.rack === rack)
       const bays = Math.max(...cells.map((cell) => cell.bay), 1)
       return <div key={rack}><h3>Rack {rack}</h3>
         <div className="rack-grid" style={{ gridTemplateColumns: `repeat(${bays}, minmax(0, 1fr))` }}>
           {cells.sort((a,b) => b.level-a.level || a.bay-b.bay).map((slot) => {
             const item = inventory.get(slot.id)
-            const status = item ? category(item.days) : slot.blocked ? 'Restricted' : 'Open'
+            const status = slot.blocked ? 'Restricted' : item ? category(item.days) : 'Open'
+            const description = [slot.id, status, item?.cargo.id].filter(Boolean).join(' · ')
             return <button type="button" key={slot.id} data-state={status} data-recommended={target?.id === slot.id} data-custom={manualTarget && target?.id === slot.id}
-              aria-pressed={selected === slot.id} title={`${slot.id} · ${item?.cargo.id ?? status}`}
-              onClick={() => onSelect(slot.id)}>{slot.id}<small>{item?.cargo.id.replace('JA-', '') ?? status}</small></button>
+              aria-pressed={selected === slot.id} aria-label={description} title={description}
+              onClick={() => onSelect(slot.id)}>{slot.id}<small>{slot.blocked ? status : item?.cargo.id.replace('JA-', '') ?? status}</small></button>
           })}
         </div>
       </div>

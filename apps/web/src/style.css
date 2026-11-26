@@ -281,6 +281,20 @@ select option { background: var(--surface); color: var(--text); }
     calc(var(--hud-tools) + var(--hud-edge) + 14px);
 }
 .rack-map h3{margin-bottom:4px;color:var(--text)}
+.rack-map-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 46px;
+  padding: 5px 9px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--secondary);
+  font-size: .76rem;
+}
+.rack-map-actions strong { color: var(--text); }
 .rack-grid{display:grid;gap:4px}
 .rack-grid button{border:1px solid var(--border-strong);border-radius:3px;background:var(--surface);padding:4px 2px;min-height:25px;font:600 .68rem var(--mono);overflow:hidden}
 .rack-grid button small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:.55rem;color:var(--secondary)}

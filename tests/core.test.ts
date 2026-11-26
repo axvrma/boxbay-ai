@@ -3,7 +3,7 @@ import { createHash } from 'node:crypto'
 import { describe, expect, test } from 'vitest'
 import { category, dubaiDate, dubaiTime, dwellFeatures, infer, isBundle, MODEL_VERSION, predict, season, sensitivity } from '../apps/web/src/intelligence/inference'
 import { apply, changeConditions, conditions, evaluate, initialize, makePickup, occupied,
-  partialPlacement, placementRestriction, rankings, restriction } from '../apps/web/src/simulation/engine'
+  partialPlacement, pickPolicy, placementRestriction, rankings, restriction, setSlotRestriction } from '../apps/web/src/simulation/engine'
 import { simulate, workload } from '../apps/web/src/simulation/experiment'
 import { containerLength, cost, handoff, inbound, movement, outbound, physics, point, sampleHandling } from '../apps/web/src/simulation/physics'
 import { createSession } from '../apps/web/src/simulation/session'
@@ -37,14 +37,14 @@ describe('real models', () => {
       expect(features).toEqual(row.features)
       expect(infer(bundle.models.dwell, features)).toBeCloseTo(row.value, 6)
     }
-    expect(season('2025-03-13', data)[0]).toBe(1)
-    expect(season('2025-12-19', data)[0]).toBe(6)
+    expect(season('2026-03-10', data)[0]).toBe(1)
+    expect(season(data.defaultDate, data)[0]).toBe(6)
     expect(dubaiDate(Date.parse('2025-03-12T21:00:00Z'))).toBe('2025-03-13')
     expect(new Date(dubaiTime('2025-03-12')).toISOString()).toBe('2025-03-12T04:00:00.000Z')
     const cold = { ...data.incoming[0], receiver: 122 }
     expect(dwellFeatures(cold,'2025-03-13',data.scenarios[0],data).slice(0,3)).toEqual([4.6,.77,-1])
     const initial = initialize(data,bundle)
-    const fresh = evaluate(changeConditions(initial,initial.operation,'2025-03-13'),data,bundle)!
+    const fresh = evaluate(changeConditions(initial,initial.operation,'2026-03-10'),data,bundle)!
     expect(Math.abs(evaluate(initial,data,bundle)!.prediction.days - fresh.prediction.days)).toBeGreaterThan(.2)
     expect(predict(bundle,data,cold,initial.clock,initial.operation).days).toBeGreaterThan(0)
   })
@@ -52,8 +52,17 @@ describe('real models', () => {
   test('publishes model and dataset evidence with matching digests', () => {
     const evaluation = JSON.parse(read('evidence/model-evaluation.json'))
     const dataset = JSON.parse(read('evidence/dataset.json'))
+    expect(data.defaultDate).toBe('2026-12-19')
+    expect(dataset.manifest).toMatchObject({ start: '2022-01-01', end: '2026-12-31', source: 'synthetic' })
+    expect(evaluation).toMatchObject({
+      version: MODEL_VERSION,
+      training: '2022-01 through 2026-06',
+      calibration: '2026-07 through 2026-09',
+      test: '2026-10 through 2026-12',
+    })
     expect(evaluation.generatedFrom).toEqual(dataset.manifest.sha256)
     expect(evaluation.artifactSha256).toEqual(createHash('sha256').update(read(`models/${MODEL_VERSION}.json`)).digest('hex'))
+    expect(JSON.parse(read('evidence/simulation-benchmark.json')).version).toBe(MODEL_VERSION)
   })
 
   test('rejects missing or malformed artifacts without fallback predictions', () => {
@@ -87,7 +96,7 @@ describe('simulation', () => {
     const down = { ...state, operation: data.scenarios.find((item)=>item.id==='breakdown')! }
     expect(evaluate(down,data,bundle)!.choices.every((item)=>item.slot.rack==='A')).toBe(true)
     const floor = { ...state.floor, inventory: data.cells.map((slot,i)=>({...state.floor.inventory[i%45],slot:slot.id})) }
-    expect(rankings(data,floor,data.incoming[0],state.operation,3,decision.forecast).choices).toEqual([])
+    expect(rankings(state.cells,floor,data.incoming[0],state.operation,3,decision.forecast).choices).toEqual([])
     const reefer = data.incoming[2]
     expect(restriction(reefer,data.cells.find((x)=>!x.blocked&&!x.reefer&&!x.hazard&&x.bay===4)!,state.operation)).toBe('Reefer power required')
   })
@@ -107,9 +116,9 @@ describe('simulation', () => {
     expect(movement(plan.legs).kwh).toBeGreaterThan(0)
     expect(() => apply(next.floor,plan,next.operation,next.clock,0,0)).toThrow('no longer valid')
     expect(changeConditions(next,next.operation,'2025-03-13')).toBe(next)
-    const future = changeConditions(next,next.operation,'2026-02-21')
+    const future = changeConditions(next,next.operation,'2027-02-21')
     expect(future.floor).toBe(next.floor)
-    const rebased = changeConditions(prior,prior.operation,'2026-02-21')
+    const rebased = changeConditions(prior,prior.operation,'2027-02-21')
     expect(rebased.decision).toBeNull()
     expect(rebased.floor.inventory.map((item)=>item.slot)).toEqual(prior.floor.inventory.map((item)=>item.slot))
     expect(rebased.clock - rebased.floor.inventory[0].arrived).toEqual(prior.clock - prior.floor.inventory[0].arrived)
@@ -136,6 +145,32 @@ describe('simulation', () => {
     expect(plan.cargo.priority).toBe(2)
     expect(occupied(next.floor).get(slot.id)?.cargo.priority).toBe(2)
     expect(data.incoming[0].priority).toBe(1)
+  })
+
+  test('applies slot restrictions to both policies and preserves cargo in blocked cells', () => {
+    const initial = initialize(data, bundle)
+    const decision = evaluate(initial, data, bundle)!
+    const prior = { ...initial, step: 'predicted' as const, decision }
+    const first = decision.choices[0]
+    const conventional = pickPolicy(decision.choices, 'first', decision.prediction.days)
+    const blocked = setSlotRestriction(setSlotRestriction(prior, data, first.slot.id, true),
+      data, conventional.slot.id, true)
+    const replacement = blocked.decision!.choices[0]
+    expect(replacement.slot.id).not.toBe(first.slot.id)
+    expect(blocked.decision!.prediction).toBe(decision.prediction)
+    expect(() => partialPlacement(blocked, data, first)).toThrow('Choose a feasible storage position')
+    const { next } = partialPlacement(blocked, data, replacement)
+    expect(occupied(next.floor).get(first.slot.id)).toBeUndefined()
+    expect(occupied(next.baseline).get(conventional.slot.id)).toBeUndefined()
+    expect(next.baseline.metrics.placements).toBe(1)
+
+    const stored = occupied(next.floor).get(replacement.slot.id)!
+    const held = setSlotRestriction(next, data, stored.slot, true)
+    expect(occupied(held.floor).get(stored.slot)).toBe(stored)
+    expect(makePickup(held.cells, held.floor, stored, held.operation)).toBeNull()
+    const restored = setSlotRestriction(held, data, stored.slot, false)
+    expect(makePickup(restored.cells, restored.floor, stored, restored.operation)).not.toBeNull()
+    expect(first.slot.blocked).toBe(false)
   })
 
   test('keeps the pallet still during the lift and inserts the load sideways at the chosen height', () => {
@@ -172,7 +207,7 @@ describe('simulation', () => {
       expect(middleOf(7).cargoAt).toEqual(point(target))
       expect(next.floor.stacker.at).toEqual([target.x, target.y + .33, 0])
       const stored = occupied(next.floor).get(target.id)!
-      const pickup = makePickup(data,next.floor,stored,next.operation)!
+      const pickup = makePickup(next.cells,next.floor,stored,next.operation)!
       const collected = sampleHandling(pickup.legs, movement(pickup.legs).seconds + 1)
       expect(collected.cargoAt).toEqual(outbound)
       expect(collected.palletAt).toEqual(outbound)

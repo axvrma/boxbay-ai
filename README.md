@@ -29,7 +29,7 @@ npm run export:model
 npm run benchmark
 ```
 
-Generation defaults to 150,000 container records and 1,826 daily records for 2021–2025. The CLI accepts a seed and row count. Large CSVs are generated under `data/synthetic` locally. The versioned portable trees, synthetic demo inputs, numerical evidence and Python parity fixtures are committed. `train:model` trains and exports and `export:model` republishes the local trained output. Bump the model version and its browser contract when publishing changed artifacts at a new immutable URL.
+Generation defaults to 150,000 synthetic container records and 1,826 daily records for 2022–2026. The models train through June 2026, calibrate on July–September and test on October–December. The CLI accepts a seed and row count. Large CSVs are generated under `data/synthetic` locally. The versioned portable trees, synthetic demo inputs, numerical evidence and Python parity fixtures are committed. `train:model` trains and exports and `export:model` republishes the local trained output. Bump the model version and its browser contract when publishing changed artifacts at a new immutable URL.
 
 ## Verify
 

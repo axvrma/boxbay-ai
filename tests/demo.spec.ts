@@ -62,7 +62,7 @@ test('runs the live 3D presenter flow, changes forecasts, undoes placement and p
   await expect(page.getByText('Step 2 / 3', { exact: true })).toBeVisible()
   await expect(page.getByRole('heading', {name:'Recommended slot'})).toBeVisible()
   const original = await page.locator('.prediction-number').textContent()
-  await page.getByLabel('Simulation date').fill('2025-03-13')
+  await page.getByLabel('Simulation date').fill('2026-03-10')
   await expect(page.locator('.prediction-number')).not.toHaveText(original!)
   await expect(page.getByText('Ramadan', { exact: true })).toBeVisible()
   await page.getByRole('button', {name:'Previous'}).click()
@@ -177,6 +177,40 @@ test('recovers a blocked JA-DEMO-015 at 59 cells and can complete handling witho
   expect(errors).toEqual([])
 })
 
+test('restricts and reopens slots on the 2D map and ranks an alternative', async ({ page }) => {
+  await staticOnly(page)
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.goto('/')
+  await expect(page.getByLabel('Simulation date')).toHaveValue('2026-12-19')
+  await page.getByRole('button', { name: '2D map' }).click()
+  const map = page.getByLabel('Two-dimensional storage map')
+  await expect(map.getByText('Select a slot to manage access.')).toBeVisible()
+  await page.getByRole('button', { name: 'Next · Predict' }).click()
+  const recommended = map.locator('button[data-recommended="true"]')
+  const originalLabel = (await recommended.getAttribute('aria-label'))!
+  const id = originalLabel.split(' · ')[0]
+  const originalSlot = map.getByRole('button', { name: new RegExp(`^${id} ·`) })
+  const dwell = page.locator('.prediction-number')
+  const prediction = (await dwell.textContent())!
+  await originalSlot.click()
+  await map.getByRole('button', { name: 'Restrict slot', exact: true }).click()
+  await expect(originalSlot).toHaveAttribute('data-state', 'Restricted')
+  await expect(originalSlot).toHaveAttribute('data-recommended', 'false')
+  await expect(recommended).toHaveCount(1)
+  await expect(dwell).toHaveText(prediction)
+  await expect(page.getByRole('button', { name: 'Next · Place container' })).toBeEnabled()
+  await map.getByRole('button', { name: 'Remove restriction' }).click()
+  await expect(originalSlot).toHaveAttribute('data-state', 'Open')
+  await expect(originalSlot).toHaveAttribute('data-recommended', 'true')
+  await page.getByRole('button', { name: 'Previous' }).click()
+  await expect(originalSlot).toHaveAttribute('data-state', 'Restricted')
+
+  const predefined = map.getByRole('button', { name: 'B06-4 · Restricted' })
+  await predefined.click()
+  await map.getByRole('button', { name: 'Remove restriction' }).click()
+  await expect(map.getByRole('button', { name: 'B06-4 · Open' })).toBeVisible()
+})
+
 test('supports mobile, direct engineering routing, and live A/B inference', async ({ page },info) => {
   const { external,errors } = await staticOnly(page)
   await page.setViewportSize({ width:390, height:844 })
@@ -205,7 +239,7 @@ test('supports mobile, direct engineering routing, and live A/B inference', asyn
   await expect(page.locator('html')).toHaveCSS('color-scheme', 'light')
   await expect(page.getByRole('heading',{name:'Engineering the live decision'})).toBeVisible()
   const current = await page.locator('.playground-card .result').last().textContent()
-  await page.getByLabel('Input B arrival date').fill('2025-12-19')
+  await page.getByLabel('Input B arrival date').fill('2026-12-19')
   await expect(page.locator('.playground-card .result').last()).not.toHaveText(current!)
   await expect(page.getByRole('heading',{name:'Matched simulation benchmarks'})).toBeVisible()
   await expect(page.getByText('Predictive placement', {exact:true})).toBeVisible()

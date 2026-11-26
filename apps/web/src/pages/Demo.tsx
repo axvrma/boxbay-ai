@@ -5,7 +5,7 @@ import { useStore } from 'zustand'
 import { dubaiDate, formatDubai } from '../intelligence/inference'
 import type { Bundle, Prediction } from '../intelligence/inference'
 import { changeConditions, conditions, evaluate, incomingCargo, initialize, makePickup, nextCompatiblePickup,
-  occupied, partialPickup, partialPlacement, placementRestriction, projectedRetrieval } from '../simulation/engine'
+  occupied, partialPickup, partialPlacement, placementRestriction, projectedRetrieval, setSlotRestriction } from '../simulation/engine'
 import type { Plan, State, Stored } from '../simulation/engine'
 import { cost, movement } from '../simulation/physics'
 import type { Leg } from '../simulation/physics'
@@ -56,12 +56,12 @@ function Factors({ prediction }: { prediction: Prediction }) {
   </section>
 }
 
-function Impact({ state, data }: { state: State; data: DemoData }) {
+function Impact({ state }: { state: State }) {
   const actual = state.floor.metrics
   const baseline = state.baseline.metrics
   const aed = cost(actual, state.rates)
-  const estimate = projectedRetrieval(data, state.floor, state.operation)
-  const baselineEstimate = projectedRetrieval(data, state.baseline, state.operation)
+  const estimate = projectedRetrieval(state.cells, state.floor, state.operation)
+  const baselineEstimate = projectedRetrieval(state.cells, state.baseline, state.operation)
   const retrievalDiff = estimate !== null && baselineEstimate !== null ? estimate - baselineEstimate : null
   const energyDiff = actual.kwh - baseline.kwh
   const aedDiff = aed - cost(baseline, state.rates)
@@ -72,7 +72,7 @@ function Impact({ state, data }: { state: State; data: DemoData }) {
       <small>{retrievalDiff === null ? 'Mean for accessible inventory' : `${signed(retrievalDiff,1)} s vs first available · accessible inventory`}</small></div>
     <div><Gauge size={15}/><span>Operating cost</span><strong>{aed.toFixed(2)} <small>AED</small></strong>
       <small>{signed(aedDiff,2)} AED vs first available · USD {(aed * state.rates.usd).toFixed(2)}</small></div>
-    <div><Box size={15}/><span>Storage occupancy</span><strong>{state.floor.inventory.length}<small> / {data.cells.length} cells</small></strong>
+    <div><Box size={15}/><span>Storage occupancy</span><strong>{state.floor.inventory.length}<small> / {state.capacity} cells</small></strong>
       <small>{actual.moves} {actual.moves === 1 ? 'move' : 'moves'} · {(actual.kwh * state.rates.emissions).toFixed(2)} kg CO₂e est.</small></div>
   </section>
 }
@@ -99,8 +99,8 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
   const hasNext = state.cargoIndex + 1 < data.incoming.length
   const recommended = state.decision?.choices[0]
   const choice = state.override ? state.decision?.choices.find((item) => item.slot.id === state.override) : recommended
-  const manualSlot = data.cells.find((cell) => cell.id === state.override)
-  const position = manualSlot ?? recommended?.slot ?? data.cells[0]
+  const manualSlot = state.cells.find((cell) => cell.id === state.override)
+  const position = manualSlot ?? recommended?.slot ?? state.cells[0]
   const current = incomingCargo(state, data)!
   const vendor = data.receivers[current.receiver]?.name ?? 'Unknown vendor'
   const cells = useMemo(() => occupied(state.floor), [state.floor])
@@ -108,17 +108,19 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
   const selectionError = state.step === 'predicted' && manualSlot && placementRestriction(current, manualSlot, operating, cells)
   const emptyCellRestrictions: Record<string, number> = {}
   if (blocked) {
-    for (const slot of data.cells) {
+    for (const slot of state.cells) {
       if (cells.has(slot.id)) continue
       const reason = placementRestriction(current, slot, operating, cells)
       if (reason) emptyCellRestrictions[reason] = (emptyCellRestrictions[reason] ?? 0) + 1
     }
   }
   const compatiblePickup = blocked ? nextCompatiblePickup(state, data) : undefined
-  const picked = data.cells.find((cell) => cell.id === selected)
-  const selectedCargo = state.floor.inventory.find((item) => item.slot === selected)
+  const picked = state.cells.find((cell) => cell.id === selected)
+  const selectedCargo = selected ? cells.get(selected) : undefined
+  const inspection = picked ? [picked.id, selectedCargo?.cargo.id, picked.blocked ? 'Restricted' :
+    selectedCargo ? undefined : 'Available'].filter(Boolean).join(' · ') : 'Select a cell to inspect'
   const due = state.floor.inventory.filter((item) => item.ready <= state.clock)
-    .find((item) => makePickup(data, state.floor, item, state.operation))
+    .find((item) => makePickup(state.cells, state.floor, item, state.operation))
   const target = animation?.plan.target ?? (state.step === 'predicted' ? choice?.slot : undefined)
   const stackerStatus = state.operation.cranes === 2 ? 'Online' :
     state.operation.cranes === 1 ? (state.operation.id === 'reduced' ? 'Rack B only' : 'Rack A only') : 'Offline'
@@ -232,7 +234,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
 
   function setPosition(change: Partial<Pick<Slot, 'rack' | 'level' | 'bay'>>) {
     const wanted = { ...position, ...change }
-    const cells = data.cells.filter((cell) => cell.rack === wanted.rack)
+    const cells = state.cells.filter((cell) => cell.rack === wanted.rack)
     const next = cells.find((cell) => cell.level === wanted.level && cell.bay === wanted.bay) ??
       cells.find((cell) => cell.level === wanted.level) ?? cells[0]
     if (next) commit({ ...state, override: next.id })
@@ -247,12 +249,17 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
     })
   }
 
+  function restrictSlot(id: string, restricted: boolean) {
+    if (!locked.current) commit(setSlotRestriction(state, data, id, restricted))
+  }
+
   const changeRates = (key: keyof Rates, value: number) => commit({ ...state, rates: { ...state.rates, [key]: value } })
   return <div className="demo-shell">
     <section className="twin-panel" aria-label="Facility viewer">
       <div className="viewport"><Suspense fallback={<div className="view-status">Preparing 3D facility…</div>}>
         <View data={data} state={state} target={target} selected={selected} onSelect={setSelected}
-            camera={camera} cameraVersion={cameraVersion} animation={animation} manualTarget={!!state.override} map={map}/>
+            camera={camera} cameraVersion={cameraVersion} animation={animation} manualTarget={!!state.override}
+            map={map} busy={busy} onRestrictSlot={restrictSlot}/>
       </Suspense></div>
     </section>
 
@@ -273,7 +280,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
             aria-expanded={settings} disabled={busy}><Settings2 size={15}/> <span>Conditions</span></button></div>
         </div>
         <div className="twin-toolbar hud-card">
-          <div className="twin-title"><span className="status-light"/><strong>High-bay facility</strong><span className="twin-detail">Two racks · {data.cells.length} cells</span></div>
+          <div className="twin-title"><span className="status-light"/><strong>High-bay facility</strong><span className="twin-detail">Two racks · {state.capacity} cells</span></div>
           <div className="camera-actions">
             <select aria-label="Camera view" value={camera} disabled={map} onChange={(e) => setCamera(e.currentTarget.value as Camera)}>
               <option value="isometric">Isometric</option><option value="front">Front</option><option value="top">Top</option>
@@ -303,7 +310,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
             <span className="long">Long</span><span className={state.override ? "manual-slot" : "recommended"}>{state.override ? "Custom position" : "Recommended"}</span><span className="priority">Priority</span>
             <span className="restricted">Restricted</span></div>
           {animation && handlingPhase && <span className="motion-status" role="status">{handlingLabels[handlingPhase]}</span>}
-          <span className="inspection" data-selected={Boolean(picked)}>{picked ? `${picked.id} · ${selectedCargo?.cargo.id ?? (picked.blocked ? 'Restricted' : 'Available')}` : 'Select a cell to inspect'}</span>
+          <span className="inspection" data-selected={Boolean(picked)}>{inspection}</span>
         </div>
       </div>
       <aside className="decision-pane hud-card" aria-label="AI decision">
@@ -357,8 +364,8 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
               {selectionError && <p className="position-error" role="status">{slotLabel(manualSlot!)} is unavailable. {selectionError}.</p>}
               {blocked && <>
                 <p className="position-error" role="status">
-                  {cells.size === data.cells.length ? 'All cells are occupied.' :
-                    `${data.cells.length - cells.size} empty cells are unavailable for this container.`}
+                  {cells.size === state.capacity ? 'All cells are occupied.' :
+                    `${state.capacity - cells.size} empty cells are unavailable for this container.`}
                 </p>
                 {Object.keys(emptyCellRestrictions).length > 0 && <ul className="cell-restrictions">
                   {Object.entries(emptyCellRestrictions).map(([reason, count]) =>
@@ -381,14 +388,14 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
                   <summary>Override position</summary>
                   <div className="position-fields">
                     <label>Rack<select value={position.rack} disabled={busy} onChange={(e) => setPosition({ rack: e.currentTarget.value as Rack })}>
-                      {[...new Set(data.cells.map((cell) => cell.rack))].map((rack) => <option key={rack}>{rack}</option>)}
+                      {[...new Set(state.cells.map((cell) => cell.rack))].map((rack) => <option key={rack}>{rack}</option>)}
                     </select></label>
                     <label>Row<select value={position.level} disabled={busy} onChange={(e) => setPosition({ level: Number(e.currentTarget.value) })}>
-                      {[...new Set(data.cells.filter((cell) => cell.rack === position.rack).map((cell) => cell.level))]
+                      {[...new Set(state.cells.filter((cell) => cell.rack === position.rack).map((cell) => cell.level))]
                         .map((row) => <option key={row}>{row}</option>)}
                     </select></label>
                     <label>Column<select value={position.bay} disabled={busy} onChange={(e) => setPosition({ bay: Number(e.currentTarget.value) })}>
-                      {data.cells.filter((cell) => cell.rack === position.rack && cell.level === position.level)
+                      {state.cells.filter((cell) => cell.rack === position.rack && cell.level === position.level)
                         .map((cell) => <option key={cell.id} value={cell.bay}>{cell.bay}</option>)}
                     </select></label>
                   </div>
@@ -427,7 +434,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
       </section>}
       <div className="demo-dock">
         {message && <p className="inline-alert hud-card" role="alert"><CircleHelp size={15}/>{message}</p>}
-        <Impact state={state} data={data}/>
+        <Impact state={state}/>
         <div className="action-bar hud-card">
           <button type="button" className="button subdued new-session" title="New session" disabled={busy} onClick={() => {
             reset(initialize(data, bundle)); setSelected(undefined); setMessage('')

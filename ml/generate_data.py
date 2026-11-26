@@ -15,8 +15,10 @@ ROOT = Path(__file__).resolve().parents[1]
 PUBLIC = ROOT / "apps/web/public"
 DATA = ROOT / "data/synthetic"
 SEED = 240319
-START = date(2021, 1, 1)
-END = date(2026, 1, 1)
+START = date(2022, 1, 1)
+CALIBRATION_START = date(2026, 7, 1)
+TEST_START = date(2026, 10, 1)
+END = date(2027, 1, 1)
 GST = timezone(timedelta(hours=4))
 COMMODITIES = ("Electronics", "Textiles", "Pharmaceuticals", "Automotive parts", "Retail merchandise",
                "Industrial machinery", "Refrigerated food", "General cargo", "Construction materials", "Chemicals")
@@ -126,7 +128,7 @@ def demo(events):
         initial.append(dict(cargo=item, slot=cell["id"], ageDays=round(rng.uniform(.25, 6.5), 2),
                             actualDwellDays=round(rng.uniform(7.5, 12.5), 2), arrivalScenario=("trucks", "normal", "surge")[i % 3]))
     return dict(
-        schema=1, defaultDate="2025-12-19", dateMin="2021-01-01", dateMax="2028-12-31",
+        schema=1, defaultDate="2026-12-19", dateMin="2021-01-01", dateMax="2028-12-31",
         cells=cells, incoming=incoming, initial=initial, events=events, eventNames=EVENTS,
         commodities=COMMODITIES, ports=PORTS, regions=REGIONS, destinations=DESTINATIONS,
         receivers=[dict(id=f"RX-{i+1:02}", name=name, dwell=PROFILE[i][0], reliability=PROFILE[i][1])
@@ -187,7 +189,7 @@ def generate(size, seed):
                 lanes = [(0, 4, 8, 7), (1, 6, 7), (2, 5, 7), (3, 4, 5), (4, 0, 8, 6),
                          (5, 2, 3), (6, 7, 2), (7, 1, 9, 10, 11), (8, 6, 5, 11), (9, 1, 5, 10)]
                 lane = rng.choice(lanes[commodity]) if rng.random() < .84 else rng.randrange(len(PORTS))
-                receiver = (rng.randrange(10, 12) if when.year == 2025 and rng.random() < .16 else
+                receiver = (rng.randrange(10, 12) if when >= TEST_START and rng.random() < .16 else
                             (commodity * 7 + rng.choices([0, 1, 2, 3], [6, 2, 1, 1])[0]) % 10)
                 prior, reliability = PROFILE[receiver] if receiver < 10 else (4.6, .77)
                 queue = history[receiver]

@@ -23,7 +23,7 @@ export function workload(seed: number, data: DemoData) {
 }
 
 export function simulate(data: DemoData, bundle: Bundle, condition: Condition, policy: Policy, seed: number) {
-  const date = condition === 'seasonal' ? '2025-12-19' : '2025-05-12'
+  const date = condition === 'seasonal' ? data.defaultDate : '2026-05-12'
   const occupied = new Set(data.initial.map((item) => item.slot))
   const dense = condition === 'full'
     ? data.cells.filter((slot) => !occupied.has(slot.id)).flatMap((slot, i) => {
@@ -51,7 +51,7 @@ export function simulate(data: DemoData, bundle: Bundle, condition: Condition, p
       requested.set(initial.cargo.id, clock)
     }
     for (const item of floor.inventory.filter((stored) => requested.has(stored.cargo.id) && !completed.has(stored.cargo.id))) {
-      const plan = makePickup(data,floor,item,daily)
+      const plan = makePickup(data.cells,floor,item,daily)
       if (plan && floor.metrics.seconds - startUsage + movement(plan.legs, daily.cranes).seconds <= windowSeconds) {
         floor = apply(floor,plan,daily,clock + (floor.metrics.seconds-startUsage)*1000,item.days,0,requested.get(item.cargo.id))
         completed.add(item.cargo.id)
@@ -59,7 +59,7 @@ export function simulate(data: DemoData, bundle: Bundle, condition: Condition, p
     }
     for (const entry of arrivals.filter((item) => item.arrival === day)) {
       const days = infer(bundle.models.dwell,dwellFeatures(entry.cargo,dubaiDate(clock),daily,data))
-      const ranking = rankings(data,floor,entry.cargo,daily,days,expected)
+      const ranking = rankings(data.cells,floor,entry.cargo,daily,days,expected)
       const selected = pickPolicy(ranking.choices,policy,days)
       if (selected && floor.metrics.seconds - startUsage + selected.placement.seconds <= windowSeconds) {
         floor = apply(floor,makePlacement(floor,entry.cargo,selected.slot),daily,clock,days,entry.stays)

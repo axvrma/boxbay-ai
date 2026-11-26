@@ -42,7 +42,7 @@ const num = (value: number | null, digits = 2) => value === null ? '—' : value
 
 function FeaturePlayground({ data, bundle }: {data: DemoData; bundle: Bundle}) {
   const [left, setLeft] = useState(data.defaultDate)
-  const [right, setRight] = useState('2025-03-13')
+  const [right, setRight] = useState('2026-03-10')
   const [difference, setDifference] = useState<number>()
   const [base, setBase] = useState({ ...data.incoming[0] })
   const [compareCargo, setCompareCargo] = useState({ ...data.incoming[0] })
