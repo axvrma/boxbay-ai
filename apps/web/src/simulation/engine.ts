@@ -148,6 +148,15 @@ export function makePickup(data: DemoData, facility: Facility, item: Stored, con
     legs: pickupLegs(slot, item.cargo.kg, facility.stacker.at, facility.trayAt) }
 }
 
+export function nextCompatiblePickup(state: State, data: DemoData) {
+  const cargo = incomingCargo(state, data)
+  if (!cargo) return undefined
+  return state.floor.inventory.toSorted((a, b) => a.ready - b.ready).find((item) => {
+    const slot = data.cells.find((cell) => cell.id === item.slot)
+    return slot && !restriction(cargo, slot, state.operation) && dubaiDate(Math.max(item.ready, state.clock)) <= data.dateMax
+  })
+}
+
 export function apply(facility: Facility, plan: Plan, context: Operating, clock: number, days: number, actualDwell: number, requestedAt = clock): Facility {
   const bySlot = occupied(facility)
   const here = plan.source === null ? undefined : bySlot.get(plan.source)
@@ -207,6 +216,34 @@ export function partialPlacement(state: State, data: DemoData, choice: Ranking) 
     baseline: elapsedIdle(baseFloor, wall-baseTime, operating.cranes),
     clock: state.clock + Math.round(wall * 1000), step: 'placed' as const,
     notice: baselinePlan ? '' : 'First-available policy could not place this container.' } }
+}
+
+export function partialPickup(state: State, data: DemoData, bundle: Bundle, item: Stored, dispatchAt = state.clock) {
+  const plan = makePickup(data, state.floor, item, state.operation)
+  if (!plan || dispatchAt < Math.max(state.clock, item.ready)) return null
+  const other = state.baseline.inventory.find((entry) => entry.cargo.id === item.cargo.id && entry.ready <= dispatchAt)
+  const basePlan = other && makePickup(data, state.baseline, other, state.operation)
+  const access = state.operation.cranes
+  const seconds = movement(plan.legs, access).seconds
+  const baselineSeconds = basePlan ? movement(basePlan.legs, access).seconds : 0
+  const wall = Math.max(seconds, baselineSeconds)
+  const floor = apply(state.floor, plan, state.operation, dispatchAt, item.days, 0)
+  const baseline = basePlan ? apply(state.baseline, basePlan, state.operation, dispatchAt, item.days, 0) : state.baseline
+  const next: State = {
+    ...state,
+    clock: dispatchAt + Math.round(wall * 1000),
+    floor: elapsedIdle(floor, wall - seconds, access),
+    baseline: elapsedIdle(baseline, wall - baselineSeconds, access),
+    notice: `${item.cargo.id} delivered to outbound transfer. ${plan.target.id} is available.`,
+  }
+  if (state.step === 'predicted') {
+    next.comparison = state.decision?.prediction
+    next.decision = evaluate(next, data, bundle)
+    if (!state.decision?.choices.length && !next.decision?.choices.some(({ slot }) => slot.id === state.override)) {
+      next.override = undefined
+    }
+  }
+  return { plan, next }
 }
 
 export function changeConditions(state: State, operation: Operating, date: string) {

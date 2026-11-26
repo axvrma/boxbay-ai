@@ -4,9 +4,9 @@ import { ArrowLeft, ArrowRight, Box, CalendarDays, ChevronDown, CircleHelp, Cloc
 import { useStore } from 'zustand'
 import { dubaiDate, formatDubai } from '../intelligence/inference'
 import type { Bundle, Prediction } from '../intelligence/inference'
-import { changeConditions, conditions, evaluate, incomingCargo, initialize, makePickup, apply,
-  elapsedIdle, occupied, partialPlacement, placementRestriction, projectedRetrieval } from '../simulation/engine'
-import type { Plan, State } from '../simulation/engine'
+import { changeConditions, conditions, evaluate, incomingCargo, initialize, makePickup, nextCompatiblePickup,
+  occupied, partialPickup, partialPlacement, placementRestriction, projectedRetrieval } from '../simulation/engine'
+import type { Plan, State, Stored } from '../simulation/engine'
 import { cost, movement } from '../simulation/physics'
 import type { Leg } from '../simulation/physics'
 import { createSession } from '../simulation/session'
@@ -82,6 +82,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
   const { state, history, commit, previous, reset } = useStore(session)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
+  const [animations, setAnimations] = useState(true)
   const [animation, setAnimation] = useState<Animation>()
   const [handlingPhase, setHandlingPhase] = useState<Leg['phase']>()
   const [camera, setCamera] = useState<Camera>('isometric')
@@ -93,14 +94,27 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
   const [detailsOpen, setDetailsOpen] = useState(false)
   const locked = useRef(false)
   const mounted = useRef(true)
-  const movementTimer = useRef<number>(undefined)
+  const finishMovement = useRef<(() => void) | undefined>(undefined)
+  const blocked = state.step === 'predicted' && !state.decision?.choices.length
+  const hasNext = state.cargoIndex + 1 < data.incoming.length
   const recommended = state.decision?.choices[0]
   const choice = state.override ? state.decision?.choices.find((item) => item.slot.id === state.override) : recommended
   const manualSlot = data.cells.find((cell) => cell.id === state.override)
   const position = manualSlot ?? recommended?.slot ?? data.cells[0]
   const current = incomingCargo(state, data)!
   const vendor = data.receivers[current.receiver]?.name ?? 'Unknown vendor'
-  const selectionError = state.step === 'predicted' && manualSlot && placementRestriction(current, manualSlot, conditions(state), occupied(state.floor))
+  const cells = useMemo(() => occupied(state.floor), [state.floor])
+  const operating = conditions(state)
+  const selectionError = state.step === 'predicted' && manualSlot && placementRestriction(current, manualSlot, operating, cells)
+  const emptyCellRestrictions: Record<string, number> = {}
+  if (blocked) {
+    for (const slot of data.cells) {
+      if (cells.has(slot.id)) continue
+      const reason = placementRestriction(current, slot, operating, cells)
+      if (reason) emptyCellRestrictions[reason] = (emptyCellRestrictions[reason] ?? 0) + 1
+    }
+  }
+  const compatiblePickup = blocked ? nextCompatiblePickup(state, data) : undefined
   const picked = data.cells.find((cell) => cell.id === selected)
   const selectedCargo = state.floor.inventory.find((item) => item.slot === selected)
   const due = state.floor.inventory.filter((item) => item.ready <= state.clock)
@@ -109,7 +123,9 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
   const stackerStatus = state.operation.cranes === 2 ? 'Online' :
     state.operation.cranes === 1 ? (state.operation.id === 'reduced' ? 'Rack B only' : 'Rack A only') : 'Offline'
   const withPrediction = state.step === 'predicted' || state.step === 'placed'
-  const label = actions[state.step]
+  const label = blocked
+    ? compatiblePickup ? compatiblePickup.ready > state.clock ? 'Advance to pickup' : 'Free a cell' : 'Hold and continue'
+    : state.step === 'placed' ? actions.placed : `Next · ${actions[state.step]}`
 
   useEffect(() => {
     mounted.current = true
@@ -117,7 +133,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
     document.addEventListener('fullscreenchange', isFullscreen)
     return () => {
       mounted.current = false
-      window.clearTimeout(movementTimer.current)
+      finishMovement.current?.()
       document.removeEventListener('fullscreenchange', isFullscreen)
     }
   }, [])
@@ -151,15 +167,34 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
   }
 
   async function animate(plan: Plan) {
-    if (matchMedia('(prefers-reduced-motion: reduce)').matches) return
+    if (!animations || matchMedia('(prefers-reduced-motion: reduce)').matches) return
     const duration = Math.max(5400, Math.min(8200, movement(plan.legs).seconds * 180))
     setHandlingPhase(plan.legs[0].phase)
     setAnimation({ plan, duration, start: performance.now() })
-    await new Promise<void>((resolve) => { movementTimer.current = window.setTimeout(resolve, duration) })
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        window.clearTimeout(timer)
+        finishMovement.current = undefined
+        resolve()
+      }
+      const timer = window.setTimeout(finish, duration)
+      finishMovement.current = finish
+    })
     if (mounted.current) setAnimation(undefined)
   }
 
+  function advanceContainer(notice = '') {
+    if (!hasNext) return
+    commit({ ...state, step: 'arrived', cargoIndex: state.cargoIndex + 1, decision: null,
+      comparison: undefined, override: undefined, priorityOverride: undefined, notice })
+  }
+
   function next() {
+    if (blocked) {
+      if (compatiblePickup) collect(compatiblePickup, Math.max(state.clock, compatiblePickup.ready))
+      else advanceContainer(`${current.id} held outside the racks.`)
+      return
+    }
     void attempt(async () => {
       if (state.step === 'arrived') {
         const decision = evaluate(state, data, bundle)
@@ -169,10 +204,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
         await animate(action.plan)
         if (!mounted.current) return
         commit(action.next)
-      } else if (state.step === 'placed' && state.cargoIndex + 1 < data.incoming.length) {
-        commit({ ...state, step: 'arrived', cargoIndex: state.cargoIndex + 1, decision: null,
-          comparison: undefined, override: undefined, priorityOverride: undefined, notice: '' })
-      }
+      } else if (state.step === 'placed') advanceContainer()
     })
   }
 
@@ -206,25 +238,12 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
     if (next) commit({ ...state, override: next.id })
   }
 
-  function collect() {
-    if (!due) return
+  function collect(item: Stored, dispatchAt = state.clock) {
     void attempt(async () => {
-      const plan = makePickup(data, state.floor, due, state.operation)
-      if (!plan) return
-      const other = state.baseline.inventory.find((item) => item.cargo.id === due.cargo.id)
-      const basePlan = other && makePickup(data, state.baseline, other, state.operation)
-      const duration = movement(plan.legs, state.operation.cranes).seconds
-      const baseDuration = basePlan ? movement(basePlan.legs, state.operation.cranes).seconds : 0
-      const wall = Math.max(duration, baseDuration)
-      const floor = apply(state.floor, plan, state.operation, state.clock, due.days, 0)
-      const baseline = basePlan ? apply(state.baseline, basePlan, state.operation, state.clock, due.days, 0) : state.baseline
-      const after = { ...state, clock: state.clock + Math.round(wall * 1000),
-        floor: elapsedIdle(floor, wall-duration, state.operation.cranes),
-        baseline: elapsedIdle(baseline, wall-baseDuration, state.operation.cranes),
-        step: state.step === 'predicted' ? 'arrived' as const : state.step,
-        decision: state.step === 'predicted' ? null : state.decision, notice: `${plan.cargo.id} delivered to outbound transfer.` }
-      await animate(plan)
-      if (mounted.current) commit(after)
+      const pickup = partialPickup(state, data, bundle, item, dispatchAt)
+      if (!pickup) return
+      await animate(pickup.plan)
+      if (mounted.current) commit(pickup.next)
     })
   }
 
@@ -270,7 +289,16 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
                 else unavailable()
               }}>{fullscreen ? <Minimize size={16}/> : <Maximize size={16}/>}</button>
           </div>
-        </div>        <div className="scene-footer hud-card">
+          <label className="animation-toggle">
+            <input type="checkbox" role="switch" checked={animations} onChange={(e) => {
+              const enabled = e.currentTarget.checked
+              setAnimations(enabled)
+              if (!enabled) finishMovement.current?.()
+            }}/>
+            Animations
+          </label>
+        </div>
+        <div className="scene-footer hud-card">
           <div className="legend"><span className="fast">Fast dwell</span><span className="medium">Medium</span>
             <span className="long">Long</span><span className={state.override ? "manual-slot" : "recommended"}>{state.override ? "Custom position" : "Recommended"}</span><span className="priority">Priority</span>
             <span className="restricted">Restricted</span></div>
@@ -283,7 +311,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
           aria-label={detailsOpen ? 'Hide AI details' : 'Show AI details'} onClick={() => setDetailsOpen(!detailsOpen)}>
           <span><strong>{titles[state.step]}</strong>
             <small>{state.step === 'predicted' && state.decision
-              ? `${state.decision.prediction.days.toFixed(1)} days · ${choice?.slot.id ?? 'No feasible cell'}`
+              ? `${state.decision.prediction.days.toFixed(1)} days · ${choice?.slot.id ?? 'Placement blocked'}`
               : current.id} · {vendor}</small></span>
           <ChevronDown size={16}/>
         </button>
@@ -319,14 +347,33 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
             </section>
             <Factors prediction={state.decision.prediction}/>
             <section className="side-section placement-section">
-              <h2>{state.step === 'placed' ? 'Placement complete' : state.override ? 'Custom position' : 'Recommended slot'}</h2>
+              <h2>{state.step === 'placed' ? 'Placement complete' : blocked ? 'No compatible slot' :
+                state.override ? 'Custom position' : 'Recommended slot'}</h2>
               {choice && <>
                 <p className={state.override ? "slot-label custom-position" : "slot-label"}>{slotLabel(choice.slot)}</p>
                 <p>Est. retrieval {choice.retrieval.seconds.toFixed(0)} s · Placement {choice.placement.kwh.toFixed(2)} kWh</p>
                 {state.override && recommended && choice.slot.id !== recommended.slot.id && <p>AI suggestion · {slotLabel(recommended.slot)}</p>}
               </>}
               {selectionError && <p className="position-error" role="status">{slotLabel(manualSlot!)} is unavailable. {selectionError}.</p>}
-              {!choice && !manualSlot && <p>No feasible cell. Container remains at inbound.</p>}
+              {blocked && <>
+                <p className="position-error" role="status">
+                  {cells.size === data.cells.length ? 'All cells are occupied.' :
+                    `${data.cells.length - cells.size} empty cells are unavailable for this container.`}
+                </p>
+                {Object.keys(emptyCellRestrictions).length > 0 && <ul className="cell-restrictions">
+                  {Object.entries(emptyCellRestrictions).map(([reason, count]) =>
+                    <li key={reason}>{reason} · {count} {count === 1 ? 'cell' : 'cells'}</li>)}
+                </ul>}
+                {compatiblePickup
+                  ? <p>Pick up {compatiblePickup.cargo.id} from {compatiblePickup.slot} to free a compatible cell.
+                    {compatiblePickup.ready > state.clock && ` Scheduled for ${formatDubai(compatiblePickup.ready)}.`}</p>
+                  : <p>No compatible pickup is available. {hasNext ? 'Hold this container to continue with the next arrival.' :
+                    'This is the last arrival.'}</p>}
+                {compatiblePickup && hasNext && <div><button type="button" className="button subdued" disabled={busy}
+                  onClick={() => advanceContainer(`${current.id} held outside the racks.`)}>Hold instead</button></div>}
+              </>}
+              {selectionError && recommended && <div><button type="button" className="button subdued" disabled={busy}
+                onClick={() => commit({ ...state, override: undefined })}>Use AI slot</button></div>}
               {state.step === 'predicted' && <>
                 <details onToggle={(e) => {
                   if (e.currentTarget.open) e.currentTarget.scrollIntoView({ block: 'nearest' })
@@ -345,7 +392,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
                         .map((cell) => <option key={cell.id} value={cell.bay}>{cell.bay}</option>)}
                     </select></label>
                   </div>
-                  {state.override && <button type="button" className="button subdued" disabled={busy}
+                  {state.override && !selectionError && <button type="button" className="button subdued" disabled={busy}
                     onClick={() => commit({ ...state, override: undefined })}>Use AI slot</button>}
                 </details>
                 <details><summary>Placement scores</summary>
@@ -376,7 +423,7 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
           ['emissions','Emissions · kg CO₂e/kWh'],['usd','USD per AED']] as const).map(([key,name]) => <label key={key}>{name}
           <input type="number" min="0" step=".01" defaultValue={state.rates[key]} key={state.rates[key]} disabled={busy}
             onBlur={(e) => {const value = e.currentTarget.valueAsNumber; if (value >= 0 && value !== state.rates[key]) changeRates(key,value)}}/></label>)}
-        {due && <button className="button" disabled={busy} onClick={collect}>Dispatch due pickup</button>}
+        {due && <button className="button" disabled={busy} onClick={() => collect(due)}>Dispatch due pickup</button>}
       </section>}
       <div className="demo-dock">
         {message && <p className="inline-alert hud-card" role="alert"><CircleHelp size={15}/>{message}</p>}
@@ -390,9 +437,9 @@ export default function Demo({ data, bundle }: { data: DemoData; bundle: Bundle 
               previous(); setMessage('')
             }}><ArrowLeft size={15}/> Previous</button>
             <div className="step-status" aria-live="polite"><strong>Step {steps[state.step]} / 3</strong><small>{busy ? 'Operation in progress' : titles[state.step]}</small></div>
-            <button type="button" className="button primary" disabled={busy || state.step === 'predicted' && !choice ||
-              state.step === 'placed' && state.cargoIndex + 1 >= data.incoming.length} onClick={next}>
-              {state.step === 'placed' ? label : `Next · ${label}`}<ArrowRight size={15}/></button>
+            <button type="button" className="button primary" disabled={busy ||
+              (blocked ? !compatiblePickup && !hasNext : state.step === 'predicted' && !choice || state.step === 'placed' && !hasNext)}
+              onClick={next}>{label}<ArrowRight size={15}/></button>
           </div>
         </div>
       </div>

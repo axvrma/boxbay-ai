@@ -162,6 +162,8 @@ select option { background: var(--surface); color: var(--text); }
 .motion-status { color: var(--blue); font-size: .72rem; font-weight: 650; }
 .twin-detail, .inspection { color: var(--muted); font-size: .67rem; }
 .camera-actions select { min-width: 0; max-width: 100%; font-size: .72rem; padding: 4px 6px; }
+.animation-toggle { display: inline-flex; align-items: center; gap: 6px; justify-self: start; color: var(--secondary); font-size: .72rem; }
+.animation-toggle input { margin: 0; }
 .scene-footer {
   max-width: 100%;
   display: grid;
@@ -217,6 +219,7 @@ select option { background: var(--surface); color: var(--text); }
 .position-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
 .position-fields label { display: grid; gap: 3px; }
 .position-error { color: var(--amber) !important; }
+.cell-restrictions { margin: 0; padding-left: 1.1rem; color: var(--muted); font-size: .72rem; }
 .legend .manual-slot::before { background: transparent; border: 1px solid var(--blue); }
 .inline-alert,.inline-notice{display:flex;align-items:baseline;gap:5px;margin:8px 12px;color:var(--amber);font-size:.78rem}
 .inline-notice{color:var(--green)}

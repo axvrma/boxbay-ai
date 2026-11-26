@@ -1,6 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
+import { restriction } from '../apps/web/src/simulation/engine'
+import type { DemoData } from '../apps/web/src/simulation/types'
 
 const productionPolicy = readFileSync(new URL('../netlify.toml', import.meta.url), 'utf8')
   .match(/Content-Security-Policy = "([^"]+)"/)?.[1]
@@ -124,6 +126,53 @@ test('validates manual rack coordinates, applies priority to the prediction and 
   await page.getByRole('button', {name:'Previous'}).click()
   await expect(page.getByRole('combobox', {name:'Handling priority', exact:true})).toHaveValue('2')
   await expect(cell).toHaveAttribute('data-custom','true')
+  expect(external).toEqual([])
+  expect(errors).toEqual([])
+})
+
+test('recovers a blocked JA-DEMO-015 at 59 cells and can complete handling without animation', async ({ page }) => {
+  const { external, errors } = await staticOnly(page)
+  const data = JSON.parse(readFileSync(new URL('../apps/web/public/demo-data/jebel-ali.json', import.meta.url), 'utf8')) as DemoData
+  const occupied = new Set(data.initial.map((item) => item.slot))
+  const unavailable = new Set(['A01-1', 'B01-1', 'B06-4', 'B07-3', 'B07-4'])
+  for (const slot of data.cells) {
+    if (occupied.has(slot.id) || unavailable.has(slot.id)) continue
+    const cargo = data.incoming.find((item) => !restriction(item, slot, data.scenarios[0]))
+    if (!cargo) throw Error(`No fixture cargo for ${slot.id}`)
+    data.initial.push({ cargo: { ...cargo, id: `TEST-${slot.id}` }, slot: slot.id, ageDays: 1, actualDwellDays: 3 })
+  }
+  data.incoming = data.incoming.slice(14)
+  await page.route('**/demo-data/jebel-ali.json', (route) => route.fulfill({ json: data }))
+  await page.goto('/')
+  const impact = page.getByRole('region', { name: 'Business impact' })
+  const animations = page.getByRole('switch', { name: 'Animations' })
+  await expect(animations).toBeChecked()
+  await expect(impact).toContainText('59 / 64 cells')
+  await expect(page.getByText('JA-DEMO-015', { exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Next · Predict' }).click()
+  await expect(page.getByRole('heading', { name: 'No compatible slot' })).toBeVisible()
+  await expect(page.getByText('Reserved for urgent cargo · 2 cells')).toBeVisible()
+  await expect(page.getByText('Container size · 2 cells')).toBeVisible()
+  await page.getByRole('button', { name: 'Hold instead' }).click()
+  await expect(page.getByText('JA-DEMO-016', { exact: true })).toBeVisible()
+  await expect(impact).toContainText('59 / 64 cells')
+  await page.getByRole('button', { name: 'Previous' }).click()
+
+  await animations.uncheck()
+  await page.getByRole('button', { name: 'Advance to pickup' }).click()
+  await expect(page.getByRole('heading', { name: 'Recommended slot' })).toBeVisible()
+  await expect(page.getByText('JA-DEMO-015', { exact: true })).toBeVisible()
+  await expect(impact).toContainText('58 / 64 cells')
+  await expect(page.getByLabel('Simulation date')).not.toHaveValue(data.defaultDate)
+  await expect(page.locator('.motion-status')).toHaveCount(0)
+
+  await animations.check()
+  await page.getByRole('button', { name: 'Next · Place container' }).click()
+  await expect(page.getByText('Rail pallet moving', { exact: true })).toBeVisible()
+  await animations.uncheck()
+  await expect(page.getByRole('heading', { name: 'Placement complete' })).toBeVisible()
+  await expect(impact).toContainText('59 / 64 cells')
+  await expect(page.locator('.motion-status')).toHaveCount(0)
   expect(external).toEqual([])
   expect(errors).toEqual([])
 })
