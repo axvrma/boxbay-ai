@@ -1,8 +1,8 @@
 # BOXBAY AI · Jebel Ali
 
-BOXBAY AI is an independent, browser-native demonstration of predictive storage intelligence. The live demo starts with 45 stored containers, 64 individually accessible cells and an incoming electronics shipment. Predict dwell, inspect the model's sensitivities, approve a placement and evaluate proactive positioning. Each action runs against the present simulation state.
+BOXBAY AI is an independent, browser-native demonstration of predictive storage intelligence. The live demo starts with 45 stored containers, 64 individually accessible cells and an incoming electronics shipment. Predict dwell for a named vendor, review the recommendation and place the container. The presenter can change handling priority or choose a feasible rack, row and column.
 
-The operating data, receivers, vessels, equipment and financial rates are synthetic. The miniature layout is inspired by high-bay storage at Jebel Ali. Public port volumes are contextual and never used as facility inputs.
+The operating data, vendor profiles, vessels, equipment dimensions and financial rates are synthetic. The miniature layout is inspired by high-bay storage at Jebel Ali. Public port volumes are contextual and never used as facility inputs.
 
 ## Run locally
 

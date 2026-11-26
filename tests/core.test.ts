@@ -2,10 +2,10 @@ import { readFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { describe, expect, test } from 'vitest'
 import { category, dubaiDate, dubaiTime, dwellFeatures, infer, isBundle, MODEL_VERSION, predict, season, sensitivity } from '../apps/web/src/intelligence/inference'
-import { apply, changeConditions, completeRelocation, conditions, evaluate, initialize, opportunities,
-  partialPlacement, rankings, restriction } from '../apps/web/src/simulation/engine'
+import { apply, changeConditions, conditions, evaluate, initialize, makePickup, occupied,
+  partialPlacement, placementRestriction, rankings, restriction } from '../apps/web/src/simulation/engine'
 import { simulate, workload } from '../apps/web/src/simulation/experiment'
-import { cost, movement, physics } from '../apps/web/src/simulation/physics'
+import { containerLength, cost, handoff, inbound, movement, outbound, physics, point, sampleHandling } from '../apps/web/src/simulation/physics'
 import { createSession } from '../apps/web/src/simulation/session'
 import type { Bundle } from '../apps/web/src/intelligence/inference'
 import type { Cargo, DemoData, Operating } from '../apps/web/src/simulation/types'
@@ -119,25 +119,64 @@ describe('simulation', () => {
     expect(session.getState().state).toEqual(initial)
   })
 
-  test('chooses profitable feasible staging, avoids repeat moves, and can return no action', () => {
-    let state = initialize(data,bundle)
-    const noAction = opportunities({ ...state, operation: { ...state.operation, cranes:0 } },data,bundle)
-    expect(noAction).toEqual([])
-    const found = new Set<string>()
-    for (let i=0; i<state.capacity; i++) {
-      const top = opportunities(state,data,bundle)[0]
-      if (!top) break
-      expect(top.benefit).toBeGreaterThan(0)
-      expect(top.current.seconds).toBeGreaterThan(top.proposed.seconds)
-      expect(found.has(top.plan.cargo.id)).toBe(false)
-      found.add(top.plan.cargo.id)
-      const before = state.floor.inventory.length
-      state = completeRelocation(state,top)
-      expect(state.floor.inventory.length).toBe(before)
+  test('honors a validated manual rack position and uses the priority in both inference and placement', () => {
+    const initial = initialize(data,bundle)
+    const slot = data.cells.find((item) => item.id === 'A01-1')!
+    const standard = evaluate(initial,data,bundle)!
+    expect(standard.choices.some((choice) => choice.slot.id === slot.id)).toBe(false)
+    expect(placementRestriction(data.incoming[0], slot, conditions(initial), occupied(initial.floor))).toBe('Reserved for urgent cargo')
+    const invalid = { ...initial, step: 'predicted' as const, decision: standard, override: slot.id }
+    expect(() => partialPlacement(invalid,data,standard.choices[0])).toThrow('Choose a feasible storage position')
+    const edited = { ...invalid, priorityOverride: 2 }
+    const decision = evaluate(edited,data,bundle)!
+    expect(decision.prediction.days).not.toBe(standard.prediction.days)
+    const chosen = decision.choices.find((choice) => choice.slot.id === slot.id)!
+    expect(chosen).toBeDefined()
+    const { plan, next } = partialPlacement({ ...edited, decision }, data, chosen)
+    expect(plan.cargo.priority).toBe(2)
+    expect(occupied(next.floor).get(slot.id)?.cargo.priority).toBe(2)
+    expect(data.incoming[0].priority).toBe(1)
+  })
+
+  test('keeps the pallet still during the lift and inserts the load sideways at the chosen height', () => {
+    const initial = initialize(data,bundle)
+    for (const rack of ['A','B']) {
+      const decision = evaluate(initial,data,bundle)!
+      const choice = decision.choices.find(({slot}) => slot.rack === rack)!
+      const { plan, next } = partialPlacement({ ...initial, step: 'predicted', decision }, data, choice)
+      const { legs, target } = plan
+      const otherColumn = data.cells.find((slot) => slot.rack === rack && slot.bay === 2 && slot.level === 1)!
+      const firstColumn = data.cells.find((slot) => slot.rack === rack && slot.bay === 1 && slot.level === 1)!
+      expect(otherColumn.x - firstColumn.x).toBeGreaterThan(containerLength(40))
+      expect(legs.map((leg) => leg.phase)).toEqual(['pallet','grip','lift','travel','extend','set-down','release','retract'])
+      const middleOf = (index: number) => sampleHandling(legs,
+        legs.slice(0,index).reduce((time, leg) => time + leg.seconds, 0) + legs[index].seconds / 2)
+      const delivery = middleOf(0)
+      expect(delivery.cargoAt).toEqual(delivery.palletAt)
+      expect(sampleHandling(legs,0).cargoAt).toEqual(inbound)
+      const grip = middleOf(1)
+      expect(grip.cargoAt).toEqual(handoff)
+      expect(grip.palletAt).toEqual(handoff)
+      const lift = middleOf(2)
+      expect(lift.palletAt).toEqual(handoff)
+      expect(lift.cargoAt[1]).toBeGreaterThan(handoff[1])
+      expect(lift.cargoAt[0]).toBe(handoff[0])
+      const travel = middleOf(3)
+      expect(travel.cargoAt[0]).toBeGreaterThan(handoff[0])
+      expect(travel.cargoAt[1]).toBeGreaterThan(lift.cargoAt[1])
+      expect(travel.cargoAt[2]).toBe(0)
+      const insertion = middleOf(4)
+      expect(insertion.cargoAt[0]).toBe(target.x)
+      expect(insertion.cargoAt[1]).toBe(target.y + .18)
+      expect(insertion.cargoAt[2]).toBeCloseTo(target.z / 2)
+      expect(middleOf(7).cargoAt).toEqual(point(target))
+      expect(next.floor.stacker.at).toEqual([target.x, target.y + .33, 0])
+      const stored = occupied(next.floor).get(target.id)!
+      const pickup = makePickup(data,next.floor,stored,next.operation)!
+      const collected = sampleHandling(pickup.legs, movement(pickup.legs).seconds + 1)
+      expect(collected.cargoAt).toEqual(outbound)
+      expect(collected.palletAt).toEqual(outbound)
     }
-    expect(found.size).toBeGreaterThan(0)
-    expect(opportunities(state,data,bundle)).toEqual([])
-    expect(state.floor.metrics.relocations).toBe(found.size)
   })
 
   test('uses documented units and matched deterministic workloads for baseline comparisons', () => {
@@ -151,6 +190,6 @@ describe('simulation', () => {
     const baseline = simulate(data,bundle,'normal','first',81)
     expect(predictive.requests).toBe(baseline.requests)
     expect(predictive).toEqual(simulate(data,bundle,'normal','ai',81))
-    expect(simulate(data,bundle,'no-benefit','ai',81).relocations).toBe(0)
+    expect(predictive.moves).toBeGreaterThanOrEqual(predictive.complete)
   })
 })

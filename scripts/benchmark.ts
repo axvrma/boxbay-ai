@@ -24,7 +24,7 @@ const summaries = benchmarkConditions.flatMap((condition) => {
     const runs = rows.filter((row) => row.condition === condition && row.policy === policy)
     const deltas = runs.map((row,i) => row.cost-baseline[i].cost)
     return { condition, policy, pairs: runs.length, kwh: average(runs,'kwh'), retrieval: average(runs,'retrieval'),
-      cost: average(runs,'cost'), moves: average(runs,'moves'), relocations: average(runs,'relocations'),
+      cost: average(runs,'cost'), moves: average(runs,'moves'),
       sla: average(runs,'sla'), shipped: average(runs,'complete'), unserved: average(runs,'unserved'),
       rejected: average(runs,'rejected'), minCostDelta: Math.min(...deltas), maxCostDelta: Math.max(...deltas),
       adverseCostPairs: deltas.filter((delta) => delta > 1e-9).length }

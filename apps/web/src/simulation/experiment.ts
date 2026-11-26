@@ -1,14 +1,14 @@
 import { DAY, dubaiDate, dwellFeatures, forecast, infer } from '../intelligence/inference'
 import type { Bundle } from '../intelligence/inference'
-import { apply, elapsedIdle, initialize, makePickup, makePlacement, opportunities, pickPolicy, rankings, restriction } from './engine'
+import { apply, elapsedIdle, initialize, makePickup, makePlacement, pickPolicy, rankings, restriction } from './engine'
 import type { Policy } from './engine'
 import { cost, movement } from './physics'
 import type { DemoData, Operating } from './types'
 
 export const policyNames: Record<Policy,string> = {
-  first: 'First available', nearest: 'Nearest feasible', tier: 'Fixed tier', ai: 'Predictive + staging',
+  first: 'First available', nearest: 'Nearest feasible', tier: 'Fixed tier', ai: 'Predictive placement',
 }
-export const benchmarkConditions = ['normal','seasonal','full','surge','breakdown','trucks','reduced','no-benefit'] as const
+export const benchmarkConditions = ['normal','seasonal','full','surge','breakdown','trucks','reduced','delayed'] as const
 export type Condition = typeof benchmarkConditions[number]
 
 export function workload(seed: number, data: DemoData) {
@@ -32,7 +32,7 @@ export function simulate(data: DemoData, bundle: Bundle, condition: Condition, p
         ageDays: .5, actualDwellDays: 8 + i % 5 }] : []
     }).slice(0, 12) : []
   const base = initialize({ ...data, initial: [...data.initial, ...dense] },bundle,date)
-  const id = condition === 'seasonal' || condition === 'no-benefit' ? 'normal' : condition
+  const id = condition === 'seasonal' ? 'normal' : condition
   const operating = data.scenarios.find((item) => item.id === id)!
   let floor = base.floor
   let rejected = 0
@@ -40,7 +40,7 @@ export function simulate(data: DemoData, bundle: Bundle, condition: Condition, p
   const requested = new Map<string, number>()
   const completed = new Set<string>()
   const windowSeconds = 1200
-  const rates = condition === 'no-benefit' ? { ...base.rates, time: 0 } : base.rates
+  const rates = base.rates
   for (let day=0; day<12; day++) {
     const clock = base.clock + day * DAY
     const daily: Operating = { ...operating, occupancy: Math.min(.97, operating.occupancy + arrivals.filter((item) => item.arrival === day).length / 100) }
@@ -65,19 +65,13 @@ export function simulate(data: DemoData, bundle: Bundle, condition: Condition, p
         floor = apply(floor,makePlacement(floor,entry.cargo,selected.slot),daily,clock,days,entry.stays)
       } else rejected++
     }
-    if (policy === 'ai') {
-      const opportunity = opportunities({ ...base, clock, floor, baseline: floor, operation: daily, rates },data,bundle)[0]
-      if (opportunity && floor.metrics.seconds - startUsage + opportunity.move.seconds <= windowSeconds) {
-        floor = apply(floor,opportunity.plan,daily,clock,0,0)
-      }
-    }
     floor = elapsedIdle(floor,windowSeconds-(floor.metrics.seconds-startUsage),daily.cranes)
   }
   const metrics = floor.metrics
   return {
     condition, policy, seed, kwh: metrics.kwh, cost: cost(metrics, rates),
     retrieval: metrics.pickups > 0 ? metrics.retrievalSeconds/metrics.pickups : null,
-    moves: metrics.moves, relocations: metrics.relocations, sla: requested.size > 0 ? metrics.onTime/requested.size : 0,
+    moves: metrics.moves, sla: requested.size > 0 ? metrics.onTime/requested.size : 0,
     complete: metrics.pickups, requests: requested.size, rejected, unserved: requested.size-metrics.pickups,
   }
 }

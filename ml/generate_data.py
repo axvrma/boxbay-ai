@@ -103,11 +103,11 @@ def cargo_for(i, rng):
 def demo(events):
     rng = random.Random(SEED)
     cells = []
-    for rack, z in (("A", -8), ("B", 8)):
+    for rack, z in (("A", -4.5), ("B", 4.5)):
         for bay in range(1, 9):
             for level in range(1, 5):
                 cells.append(dict(id=f"{rack}{bay:02}-{level}", rack=rack, bay=bay, level=level,
-                                  x=bay * 5.2, y=level * 3.1, z=z, maxKg=30000 if level == 4 else 36000,
+                                  x=round(4.5 + (bay - 0.5) * 13.4, 2), y=level * 3.4, z=z, maxKg=30000 if level == 4 else 36000,
                                   sizes=[20] if bay == 7 and level in (3, 4) else [20, 40], reefer=bay in (2, 3),
                                   hazard=bay == 8, blocked=(rack == "B" and bay == 6 and level == 4),
                                   reserved=bay == 1 and level == 1))
@@ -249,7 +249,7 @@ def generate(size, seed):
                       ("operating-scenarios", "scenarios")):
         write_json(DATA.parent / f"demo/{file}.json", sample_inputs[key])
     write_json(DATA.parent / "demo/facility.json", {"cells": sample_inputs["cells"],
-               "cranes": [{"id": "A", "zone": "A"}, {"id": "B", "zone": "B"}], "zone": "Asia/Dubai"})
+               "cranes": [{"id": "STACKER-01", "racks": ["A", "B"]}], "zone": "Asia/Dubai"})
     write_json(PUBLIC / "evidence/dataset.json", {"manifest": manifest, "sample": sample,
                 "daily": [d for index, d in enumerate(days) if index % 7 == 0]})
     with (PUBLIC / "evidence/container-sample.csv").open("w", newline="") as stream:

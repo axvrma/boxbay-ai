@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { dubaiTime, formatDubai, predict } from '../intelligence/inference'
 import type { Bundle } from '../intelligence/inference'
-import { assumptions, evaluate, initialize, opportunities } from '../simulation/engine'
+import { evaluate, initialize } from '../simulation/engine'
 import type { Policy } from '../simulation/engine'
 import { physics } from '../simulation/physics'
 import { policyNames } from '../simulation/experiment'
@@ -11,7 +11,7 @@ import type { Cargo, DemoData, Operating } from '../simulation/types'
 const sections = [
   ['context','Jebel Ali context'],['architecture','Architecture'],['data','Synthetic data'],['model','Model evaluation'],
   ['playground','Live prediction playground'],['seasonal','Seasonal intelligence'],['allocation','Allocation'],
-  ['optimization','Proactive positioning'],['physics','Physics and cost'],['benchmark','Benchmarks'],
+  ['handling','Pallet and stacker'],['physics','Physics and cost'],['benchmark','Benchmarks'],
   ['deployment','Deployment'],['production','Production readiness'],
 ]
 type Stats = { n:number; mae:number; rmse:number; medianAbsoluteError:number; bias:number; wape:number }
@@ -31,7 +31,7 @@ type DataEvidence = {
 }
 type Benchmark = {
   conditions: string[]; method: string; seeds: number[]; summaries: {
-    condition: string; policy: Policy; kwh: number; retrieval: number | null; cost: number; moves: number; relocations: number
+    condition: string; policy: Policy; kwh: number; retrieval: number | null; cost: number; moves: number
     sla: number; shipped: number; unserved: number; rejected: number; adverseCostPairs: number; minCostDelta: number; maxCostDelta: number
   }[]
 }
@@ -60,9 +60,9 @@ function FeaturePlayground({ data, bundle }: {data: DemoData; bundle: Bundle}) {
       }}/></label>
       <label>Commodity<select value={cargo.commodity} onChange={(e) => setCargo({...cargo, commodity:Number(e.currentTarget.value)})}>
         {data.commodities.map((value,index)=><option key={value} value={index}>{value}</option>)}</select></label>
-      <label>Receiver<select value={cargo.receiver} onChange={(e) => setCargo({...cargo, receiver:Number(e.currentTarget.value)})}>
+      <label>Vendor<select value={cargo.receiver} onChange={(e) => setCargo({...cargo, receiver:Number(e.currentTarget.value)})}>
         {data.receivers.map((value,index)=><option key={value.id} value={index}>{value.name}</option>)}
-        <option value={-1}>Unseen receiver</option></select></label>
+        <option value={-1}>Unseen vendor</option></select></label>
       <label>Origin<select value={cargo.lane} onChange={(e) => setCargo({...cargo, lane:Number(e.currentTarget.value)})}>
         {data.ports.map((value,index)=><option key={index} value={index}>{value}{value === 'Jebel Ali' ? ' → ' + data.destinations[index] : ''}</option>)}</select></label>
       <label>Weight · t<input type="number" min="7" max={cargo.size===20?28:36} step=".5" value={cargo.kg/1000}
@@ -76,8 +76,8 @@ function FeaturePlayground({ data, bundle }: {data: DemoData; bundle: Bundle}) {
         {key === 'truck' ? 'Truck capacity' : key[0].toUpperCase()+key.slice(1)}
         <input type="range" aria-label={name+' '+key} min="0" max="1" step=".01" value={operating[key]}
           onChange={(e)=>update({...operating,[key]:Number(e.currentTarget.value)})}/><output>{Math.round(operating[key]*100)}%</output></label>)}
-      <label>Cranes available<select value={operating.cranes} onChange={(e)=>update({...operating,cranes:Number(e.currentTarget.value)})}>
-        <option value={2}>2</option><option value={1}>1</option><option value={0}>0</option></select></label>
+      <label>Crane access<select value={operating.cranes} onChange={(e)=>update({...operating,cranes:Number(e.currentTarget.value)})}>
+        <option value={2}>Both racks</option><option value={1}>One rack</option><option value={0}>Offline</option></select></label>
       <div className="result">{output.days.toFixed(2)} days</div>
       <p>{formatDubai(output.pickup)} · {output.event}</p>
       <p>{output.low !== null && output.high !== null ? `${output.low.toFixed(1)}–${output.high.toFixed(1)} d synthetic interval` : 'Interval unavailable'} · {output.durationMs.toFixed(2)} ms</p>
@@ -105,16 +105,10 @@ export default function Engineering({ data,bundle }: {data:DemoData;bundle:Bundl
   const [sample,setSample]=useState(0)
   const [scenario,setScenario]=useState('normal')
   const [allocationDate,setAllocationDate]=useState(data.defaultDate)
-  const [workerScenario,setWorkerScenario]=useState('surge')
   const worked=useMemo(() => {
     const base=initialize(data,bundle,allocationDate)
     return evaluate(base,data,bundle)
   }, [data,bundle,allocationDate])
-  const review=useMemo(() => {
-    const base=initialize(data,bundle)
-    const operation=data.scenarios.find((item)=>item.id===workerScenario) ?? base.operation
-    return opportunities({...base,operation,rates:workerScenario==='no-action'?{...base.rates,time:0}:base.rates},data,bundle)
-  }, [data,bundle,workerScenario])
   useEffect(()=>{
     const controller = new AbortController()
     const fetchEvidence = async <T,>(name: string) => {
@@ -142,12 +136,12 @@ export default function Engineering({ data,bundle }: {data:DemoData;bundle:Bundl
   return <div className="engineering">
     <nav aria-label="Engineering sections">{sections.map(([id,label])=><a key={id} href={'#'+id}>{label}</a>)}</nav>
     <article>
-      <header><h1>Engineering the live decision</h1><p>Predict earlier. Position smarter. Optimize proactively.</p></header>
+      <header><h1>Engineering the live decision</h1><p>From advance shipment data to a verified storage position.</p></header>
       {failure && <div role="alert" className="inline-alert">{failure}</div>}
       <section id="context"><h2>Jebel Ali context</h2>
         <p>DP World documented 792 storage positions at the Terminal 4 BOXBAY trial and more than 63,000 moves by August 2021.
           The 15.5 million TEU reported for 2024 covers Jebel Ali Port as a whole. Each high-bay position supports individual access.
-          This independent 64-cell demonstrator explores the incremental value of placement and proactive positioning on that type of infrastructure.</p>
+          This independent 64-cell demonstrator explores the incremental value of predictive placement on that type of infrastructure.</p>
         <div className="stat-row">
           <a href="https://www.dpworld.com/en/news/dp-world-celebrates-boxbay-milestone-with-completion-of-the-first-10000-container-moves">Terminal 4 trial</a>
           <a href="https://www.dpworld.com/en/news/successful-real-world-trial-of-boxbay-high-bay-storage-system-completed">Trial results</a>
@@ -159,7 +153,7 @@ export default function Engineering({ data,bundle }: {data:DemoData;bundle:Bundl
           ['Synthetic data → feature engineering','Seeded container and daily demand records produce time-aware numerical inputs.'],
           ['Training → model artifacts','Python fits XGBoost on chronological partitions and exports tree nodes, numeric references, evaluation and parity fixtures.'],
           ['Browser inference → allocation','Portable trees calculate dwell and expected demand. The constraint filter and unit-normalized score rank feasible cells.'],
-          ['Worker planning → simulation state','The worker returns advisory moves. The action state validates and commits custody, equipment positions and event metrics.'],
+          ['Placement approval → simulation state','The operator can accept the recommendation or choose a feasible rack, row and column. The action state commits custody, equipment positions and movement totals.'],
           ['Simulation state → digital twin and business metrics','The renderer animates the approved equipment legs. The business strip reads the same committed inventory and movement ledger.'],
         ].map(([label,body])=><details key={label}><summary>{label}</summary><p>{body}</p></details>)}
       </section>
@@ -167,7 +161,7 @@ export default function Engineering({ data,bundle }: {data:DemoData;bundle:Bundl
         {evidence && <>
           <p>{num(evidence.dataset.manifest.containers,0)} records and {num(evidence.dataset.manifest.dailyRecords,0)} daily observations,
             {evidence.dataset.manifest.start} through {evidence.dataset.manifest.end}. Seed {evidence.dataset.manifest.seed}.</p>
-          <p>Arrival timestamps are ordered. Departure labels follow arrival. Receiver history is updated only after completed pickups. Initial yard, vessel schedules and receivers are fictional.</p>
+          <p>Arrival timestamps are ordered. Departure labels follow arrival. Receiver history is updated only after completed pickups. The yard, vessel schedules and named vendor profiles are synthetic. The vendor is the receiver represented in the model.</p>
           <details><summary>Commodity distribution and receiver profiles</summary>
             <p>{Object.entries(evidence.dataset.manifest.commodityCounts).map(([name,n])=>`${name} ${num(n,0)}`).join(' · ')}</p>
             <p>{data.receivers.map(({name,dwell,reliability})=>`${name} (${dwell} d, ${Math.round(reliability*100)}% prior reliability)`).join(' · ')}</p>
@@ -223,18 +217,14 @@ export default function Engineering({ data,bundle }: {data:DemoData;bundle:Bundl
           <tbody>{worked?.choices.slice(0,5).map((r)=><tr key={r.slot.id}><td>{r.slot.id}</td><td>{num(r.score,3)}</td>
             <td>{num(r.placement.kwh)}</td><td>{num(r.retrieval.seconds,0)}</td><td>{num(r.components.capacity,3)}</td></tr>)}</tbody></table></div>
       </section>
-      <section id="optimization"><h2>Proactive positioning</h2>
-        <p>The worker compares currently stored cargo with free cells in the same crane zone. Remaining dwell uses an arrival-age-truncated model band and a tail allowance. Within {assumptions.horizonDays} days, expected pickup benefit must cover all move costs plus AED {assumptions.minimumBenefitAED.toFixed(2)}. Idle-window time is valued at {assumptions.earlyStagingTimeFactor*100}% of pickup time. Each review can commit one move and each container can be proactively moved once per session.</p>
-        <label>Generate a plan <select value={workerScenario} onChange={(e)=>setWorkerScenario(e.currentTarget.value)}>
-          {data.scenarios.map(({id,name})=><option key={id} value={id}>{name}</option>)}<option value="no-action">Zero time-related benefit</option>
-        </select></label>
-        {!review.length ? <p>No relocation recommended.</p> : review.map(({plan,current,proposed,benefit,move})=>
-          <p key={plan.cargo.id+plan.target.id}>{plan.cargo.id} · {plan.source} → {plan.target.id} · {num(current.seconds-proposed.seconds,0)} s faster pickup · {num(move.kwh)} kWh relocation · AED {num(benefit)} projected net benefit</p>)}
+      <section id="handling"><h2>Pallet and stacker</h2>
+        <p>Two rack faces share one aisle. Containers lie lengthwise along each rack face. The inbound pallet moves on floor rails and stops at the handoff. The stacker locks onto the container and lifts it clear, then travels along the aisle while lifting to the required row. Its telescopic spreader extends sideways into the bay, sets the container down and retracts.</p>
+        <p>This sequence follows the pallet circulation and stacker footage at 2:28–2:50 and 3:22–3:53 in the supplied BOXBAY reference. Dimensions and timing are demonstration assumptions.</p>
       </section>
       <section id="physics"><h2>Physics and cost</h2>
         <ul>
           <li>Lift potential is m × {physics.gravity} × height change, divided by 3.6 million to get kWh. Lift efficiency is {physics.liftEfficiency}; lowering recovers a fraction of {physics.regeneration}. Draw is clipped at zero for a movement leg.</li>
-          <li>Crane travel combines loaded and empty horizontal and vertical legs, auxiliary power and powered idle. Tray draw combines distance and loaded mass. The model serializes equipment in each action.</li>
+          <li>Aisle travel and hoisting can run concurrently. Sideways spreader extension happens at the chosen row. The movement estimate also accounts for auxiliary power and powered idle. Tray draw combines distance and loaded mass. The model serializes equipment in each action.</li>
           <li>Cost in AED is kWh × electricity + km × equipment + active hours × time. Illustrative defaults are {data.rates.electricity} AED/kWh, {data.rates.equipment} AED/km and {data.rates.time} AED/h.</li>
           <li>Modeled CO₂e is energy × {data.rates.emissions} kg/kWh. USD uses {data.rates.usd} USD per AED. Both are illustrative inputs editable in the demo.</li>
         </ul>
@@ -246,16 +236,16 @@ export default function Engineering({ data,bundle }: {data:DemoData;bundle:Bundl
             {benchmark.conditions.map((id)=><option key={id} value={id}>{data.scenarios.find((s)=>s.id===id)?.name ?? id.replace('-',' ')}</option>)}
           </select></label>
           <div className="table-wrap"><table><thead><tr><th>Policy</th><th>Energy kWh</th><th>Pickup s</th><th>AED</th>
-            <th>Moves</th><th>Relocations</th><th>SLA</th><th>Unserved</th><th>Adverse cost pairs</th></tr></thead>
+            <th>Moves</th><th>SLA</th><th>Unserved</th><th>Adverse cost pairs</th></tr></thead>
           <tbody>{benchmark.summaries.filter((s)=>s.condition===scenario).map((r)=><tr key={r.policy} title={`Paired cost range AED ${num(r.minCostDelta)} to ${num(r.maxCostDelta)}`}>
             <td>{policyNames[r.policy]}</td><td>{num(r.kwh)}</td><td>{num(r.retrieval,1)}</td><td>{num(r.cost)}</td>
-            <td>{num(r.moves,1)}</td><td>{num(r.relocations,1)}</td><td>{num(r.sla*100,1)}%</td><td>{num(r.unserved,1)}</td>
+            <td>{num(r.moves,1)}</td><td>{num(r.sla*100,1)}%</td><td>{num(r.unserved,1)}</td>
             <td>{r.adverseCostPairs} / {benchmark.seeds.length}</td></tr>)}</tbody></table></div>
           <p>Adverse pairs count cost increases versus first available. Hover a policy row for the minimum and maximum paired cost deltas.</p>
         </>}
       </section>
       <section id="deployment"><h2>Deployment</h2>
-        <p>Local Python creates synthetic data and portable XGBoost artifacts. Vite deploys the application and worker with same-origin assets. Netlify serves the two routes. The previous multi-service runtime used an API, managed services and static event recordings.</p>
+        <p>Local Python creates synthetic data and portable XGBoost artifacts. Vite deploys the application with same-origin assets. Netlify serves the two routes. The previous multi-service runtime used an API, managed services and static event recordings.</p>
         <p>Run <code>npm ci</code>, <code>npm run dev</code> or <code>npm run build</code>. Run training and benchmark generation explicitly when publishing refreshed evidence.</p>
       </section>
       <section id="production"><h2>Production readiness</h2>

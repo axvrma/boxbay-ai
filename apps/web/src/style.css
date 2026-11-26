@@ -58,7 +58,7 @@ p{line-height:1.48}
 .status-screen h1{font-size:1.5rem;color:var(--text)}
 #root:has(.demo-shell) {
   --hud-edge: clamp(12px, 1.5vw, 24px);
-  --hud-top: calc(var(--hud-edge) + 68px);
+  --hud-top: calc(var(--hud-edge) + 56px);
   --hud-tools: 15.75rem;
   --hud-panel: clamp(17rem, 23vw, 20rem);
   --dock-clearance: 11.5rem;
@@ -68,14 +68,20 @@ p{line-height:1.48}
 #root:has(.demo-shell) > .app-header {
   position: absolute;
   z-index: 2;
-  inset: var(--hud-edge) var(--hud-edge) auto;
-  min-height: 56px;
-  padding-inline: 12px;
+  inset: var(--hud-edge) auto auto var(--hud-edge);
+  max-width: calc(100% - 2 * var(--hud-edge));
+  min-height: 46px;
+  gap: 12px;
+  padding: 5px 9px;
   border: 1px solid var(--border);
   border-radius: 9px;
   background: var(--floating);
   box-shadow: var(--card-shadow);
 }
+#root:has(.demo-shell) .brand-mark { width: 32px; height: 32px; }
+#root:has(.demo-shell) .location { padding-left: 12px; white-space: nowrap; }
+#root:has(.demo-shell) .app-header nav { margin-left: 0; }
+#root:has(.demo-shell) .app-header nav a { padding: 6px 8px; white-space: nowrap; }
 #root:has(.demo-shell) > .site-footer {
   position: absolute;
   z-index: 2;
@@ -117,7 +123,8 @@ p{line-height:1.48}
   inset: var(--hud-top) auto var(--dock-clearance) var(--hud-edge);
   width: var(--hud-tools);
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto auto;
+  align-content: start;
   gap: 8px;
 }
 .context-bar {
@@ -151,11 +158,11 @@ select option { background: var(--surface); color: var(--text); }
 .twin-toolbar { display: grid; gap: 8px; padding: 9px 10px; }
 .twin-title, .camera-actions { display: flex; align-items: center; gap: 6px; }
 .twin-title strong { font-size: .77rem; white-space: nowrap; }
+.motion-status { color: var(--blue); font-size: .72rem; font-weight: 650; }
 .twin-detail, .inspection { color: var(--muted); font-size: .67rem; }
 .camera-actions select { min-width: 0; max-width: 100%; font-size: .72rem; padding: 4px 6px; }
 .scene-footer {
-  grid-row: 4;
-  max-width: 13rem;
+  max-width: 100%;
   display: grid;
   gap: 6px;
   padding: 8px 10px;
@@ -200,9 +207,16 @@ select option { background: var(--surface); color: var(--text); }
 .side-section details[open]{padding-bottom:3px}
 .side-section details p{margin:4px 0}
 .green-text,.slot-label{color:var(--green)!important}
+.slot-label.custom-position { color: var(--blue) !important; }
 .amber-text{color:var(--amber)}
 .side-section .slot-label{font-family:var(--mono);font-size:.76rem;font-weight:650}
-.alternative-label{display:grid;gap:3px}
+.vendor-name strong { color: var(--text); }
+.priority-field { display: flex; align-items: center; justify-content: space-between; gap: 6px; font-size: .74rem; color: var(--muted); }
+.priority-field select { font-size: .72rem; padding: 3px 5px; }
+.position-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 8px 0; }
+.position-fields label { display: grid; gap: 3px; }
+.position-error { color: var(--amber) !important; }
+.legend .manual-slot::before { background: transparent; border: 1px solid var(--blue); }
 .inline-alert,.inline-notice{display:flex;align-items:baseline;gap:5px;margin:8px 12px;color:var(--amber);font-size:.78rem}
 .inline-notice{color:var(--green)}
 .demo-dock {
@@ -221,13 +235,12 @@ select option { background: var(--surface); color: var(--text); }
 .impact-strip strong{grid-column:1/-1;color:var(--text);font-family:var(--mono);font-size:1.29rem;white-space:nowrap}
 .impact-strip strong small{color:var(--muted);font-size:.71rem}
 .impact-strip>div>small{grid-column:1/-1;color:var(--muted);font-size:.64rem;line-height:1.25}
-.action-bar,.step-actions,.opt-actions,.auto{display:flex;align-items:center;gap:8px}
-.action-bar { justify-content: space-between; padding: 7px 8px; }
+.step-actions { display: flex; align-items: center; gap: 8px; }
+.action-bar { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 8px; padding: 7px 8px; }
+.action-bar .new-session { justify-self: start; }
 .step-status{display:grid;min-width:92px;text-align:center;gap:2px}
 .step-status strong{font-size:.77rem}
 .step-status small{font-size:.65rem;color:var(--muted)}
-.auto{font-size:.74rem;white-space:nowrap;color:var(--secondary)}
-.auto input{margin:0}
 .button,.icon-button{display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:7px 10px;border:1px solid var(--border-strong);
   background:var(--surface);color:var(--secondary);white-space:nowrap;border-radius:5px;font-size:.76rem;font-weight:600}
 .icon-button{padding:5px}
@@ -235,7 +248,6 @@ select option { background: var(--surface); color: var(--text); }
 .button.subdued{border-color:var(--border);background:var(--panel)}
 .button.primary{border-color:#175c8c;background:#175c8c;color:var(--surface)}
 .button.primary:hover:not(:disabled){background:#124970}
-.button.optimize{color:var(--green);border-color:#aecdbf;background:#e8f5ee}
 .map-button{padding:5px 7px}
 .condition-drawer {
   position: absolute;
@@ -273,6 +285,7 @@ select option { background: var(--surface); color: var(--text); }
 .rack-grid button[data-state="Long"]{background:#f8e2e5}
 .rack-grid button[data-state="Restricted"]{background:#dfe5ea}
 .rack-grid button[data-recommended="true"]{border-color:var(--green);outline:1px solid var(--green)}
+.rack-grid button[data-custom="true"] { border-color: var(--blue); outline-color: var(--blue); }
 .rack-grid button[aria-pressed="true"]{outline:2px solid var(--blue)}
 .muted{color:var(--muted)}
 .engineering{display:grid;grid-template-columns:210px minmax(0,1fr);gap:22px;max-width:1400px;margin:auto;padding:22px clamp(12px,2vw,28px)}
@@ -306,11 +319,11 @@ select option { background: var(--surface); color: var(--text); }
 @media (max-width: 760px) {
   #root:has(.demo-shell) {
     --hud-edge: 9px;
-    --hud-top: 67px;
-    --dock-clearance: 10.6rem;
+    --hud-top: 61px;
+    --dock-clearance: 9rem;
     --footer-clearance: 34px;
   }
-  #root:has(.demo-shell) > .app-header { min-height: 50px; padding: 6px 8px; gap: 6px; flex-wrap: nowrap; }
+  #root:has(.demo-shell) > .app-header { min-height: 42px; padding: 5px 8px; gap: 6px; flex-wrap: nowrap; }
   #root:has(.demo-shell) .brand { gap: 6px; }
   #root:has(.demo-shell) .brand strong { font-size: .91rem; }
   #root:has(.demo-shell) .brand small { display: none; }
@@ -376,14 +389,14 @@ select option { background: var(--surface); color: var(--text); }
   .impact-strip strong { font-size: .94rem; }
   .impact-strip strong small { font-size: .56rem; }
   .impact-strip > div > small { font-size: .55rem; }
-  .action-bar { display: grid; grid-template-columns: auto 1fr; gap: 5px; padding: 5px; }
-  .step-actions { grid-area: 1 / 1 / 2 / -1; justify-content: space-between; }
+  .action-bar { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 5px; padding: 5px; }
+  .action-bar .new-session { justify-self: start; width: 28px; overflow: hidden; color: transparent; gap: 0; font-size: 0; }
+  .action-bar .new-session svg { color: var(--secondary); flex-shrink: 0; }
+  .step-actions { justify-content: space-between; margin: 0; }
   .step-status { min-width: 56px; }
   .step-status small { display: none; }
   .action-bar .button { padding: 5px 6px; gap: 4px; font-size: .7rem; }
   .action-bar .button svg { width: 13px; height: 13px; }
-  .opt-actions { justify-content: flex-end; gap: 5px; }
-  .auto { gap: 4px; font-size: .68rem; }
   .condition-drawer {
     position: fixed;
     inset: var(--hud-top) var(--hud-edge) auto;
