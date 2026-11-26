@@ -1,42 +1,52 @@
-# BOXBAY AI 2.0
+# BOXBAY AI · Jebel Ali
 
-Predictive intelligence for high-bay container operations. This independent research demonstrator tests whether demand and pickup signals improve crane scheduling and slot allocation in a simulated, individually accessible storage facility. The modeled process starts and ends at the facility transfer interface. Trays travel in a shallow under-rack channel, and each rack has its own dedicated crane.
+BOXBAY AI is an independent, browser-native demonstration of predictive storage intelligence. The live demo starts with 45 stored containers, 64 individually accessible cells and an incoming electronics shipment. Predict dwell, inspect the model's sensitivities, approve a placement and evaluate proactive positioning. Each action runs against the present simulation state.
 
-- **Command center** at `/` renders authoritative simulation events in a selectable 3D facility. Use the policy switch, scrubber, scenario controls, interventions, topology editor, override preview and snapshots.
-- **Shift demo** at `/demo` puts you in the operator's seat: confirm an arrival, approve its slot, then decide whether to reshuffle ahead of pickup. Runs from a bundled recording without an API or operator token.
-- **Engineering** at `/engineering` shows the observed data, model holdout, paired operational results, adverse outcomes and illustrative USD sensitivity.
-- **Benchmark laboratory** at `/benchmarks` compares four policies on common seeded workloads. Download run-level results and inspect uncertainty.
+The operating data, receivers, vessels, equipment and financial rates are synthetic. The miniature layout is inspired by high-bay storage at Jebel Ali. Public port volumes are contextual and never used as facility inputs.
 
-## Start locally
+## Run locally
 
-Use Python 3.11 and Node 22.12 or newer. On macOS install Homebrew `libomp` for XGBoost training.
+Use Node.js 22.12 or newer.
 
 ```sh
-make setup
-make api             # Terminal 1
-make web             # Terminal 2
+npm ci
+npm run dev
 ```
 
-Open [localhost:5173](http://localhost:5173). Startup uses loopback SQLite without cloud credentials. The recorded scenarios, Engineering page and benchmark results are available with the frontend alone. Docker Compose is documented in [Local development](docs/deployment/local-development.md).
+Open [the demo](http://localhost:5173/) or [Engineering](http://localhost:5173/engineering). Python and a network inference service are unnecessary at runtime.
 
-## Reproduce and verify
+## Reproduce the trained artifacts
+
+Use Python 3.11. On Apple Silicon, XGBoost may require Homebrew's `libomp`.
 
 ```sh
-make train           # Temporal demand and dwell evaluation, versioned JSON export
-make benchmark       # 14 scenarios × 8 seeds × 4 policies, plus offline replays
-make profile         # Local solver/runtime/RSS measurements
-make contracts       # OpenAPI and generated TypeScript
-make verify          # Python and frontend checks, tests and production build
+python3.11 -m venv .venv
+source .venv/bin/activate
+python3 -m pip install -r ml/requirements.txt
+npm run generate:data
+npm run train:model
+npm run export:model
+npm run benchmark
 ```
 
-The demand and dwell models are trained offline. The deployed application loads portable versioned inference data. The simulator owns the rack, crane and container state, and commit events drive the browser. Historical Port of Los Angeles volumes are monthly port-wide TEU. Vessel, container and crane records are simulated. Geometry, carrier behavior and energy coefficients require terminal validation.
+Generation defaults to 150,000 container records and 1,826 daily records for 2021–2025. The CLI accepts a seed and row count. Large CSVs are generated under `data/synthetic` locally. The versioned portable trees, synthetic demo inputs, numerical evidence and Python parity fixtures are committed. `train:model` trains and exports and `export:model` republishes the local trained output. Bump the model version and its browser contract when publishing changed artifacts at a new immutable URL.
 
-## Deployment and evidence
+## Verify
 
-- [Engineering handover](docs/engineering/handover.md)
-- [Legacy audit](docs/engineering/legacy-audit.md) and [system architecture](docs/architecture/system.md)
-- [Model validation](docs/research/model-validation.md) and [benchmark methodology](docs/business/benchmark-methodology.md)
-- [Netlify](docs/deployment/netlify.md), [Railway](docs/deployment/railway.md), [Neon](docs/deployment/neon.md) and [operating cost](docs/deployment/cost-management.md)
-- [Executive walkthrough](docs/demo/executive-walkthrough.md) and [scenario catalog](docs/demo/scenario-catalog.md)
+```sh
+npm run lint
+npm test
+python3 -m unittest discover -s tests -p test_data.py
+npm run build
+npx playwright install chromium
+npm run test:e2e
+```
 
-The historical React, Node, Python and Unity implementations remain in their original directories. All equipment actions in 2.0 are simulated. The demonstrator has no affiliation with, access to, or operational validation from BOXBAY, DP World or SMS Group.
+Playwright starts and stops a temporary Vite preview. The tests reject requests for APIs, external services and recordings during the executive workflow. The benchmark command uses the same browser simulation functions on matched workload inputs and exports only numerical summaries.
+
+## Deploy to Netlify
+
+Connect the repository as one Netlify site. The checked-in configuration runs `npm run build`, publishes `apps/web/dist`, routes direct SPA requests, and sets cache and security headers. The build consumes existing model files. No environment variables or cloud services are required. Assign `boxbay.axvrma.com` in Netlify and configure its DNS through the domain account.
+
+- [Three-minute executive walkthrough](docs/demo/executive-walkthrough.md)
+- [Engineering and reproducibility notes](docs/engineering/system.md)

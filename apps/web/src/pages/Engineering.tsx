@@ -1,162 +1,266 @@
-import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
-import { ArrowRight, ArrowUpRight, BookOpen, Database, GitBranch, Layers3, Server, Workflow } from 'lucide-react'
-import { CartesianGrid, Legend, Line, LineChart, ReferenceLine, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis } from 'recharts'
-import { getEvidence } from '../client'
-import { ComparisonHeadline, EvidenceError, Panel } from '../components/UI'
-import { fmt } from '../model'
-import type { Benchmark, ModelEvidence, SourceManifest } from '../model'
+import { useEffect, useMemo, useState } from 'react'
+import { CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
+import { dubaiTime, formatDubai, predict } from '../intelligence/inference'
+import type { Bundle } from '../intelligence/inference'
+import { assumptions, evaluate, initialize, opportunities } from '../simulation/engine'
+import type { Policy } from '../simulation/engine'
+import { physics } from '../simulation/physics'
+import { policyNames } from '../simulation/experiment'
+import type { Cargo, DemoData, Operating } from '../simulation/types'
 
-const stages = [
-  ['Observed demand', 'Rolling-origin monthly imports and exports inform demand pressure. Vessel notices supply scenario-scale workload.'],
-  ['Predictive planning', 'An appointment and dwell estimate informs pickup cost. Inbound pressure changes the opportunity cost of scarce slots.'],
-  ['Feasible dispatch', 'CP-SAT chooses bounded crane, slot and start-time alternatives. The event engine commits inventory on completion.'],
-  ['Paired evaluation', 'The same seeds, starting inventory and disturbances isolate policy effects. Replay links each choice to its inputs and outcomes.'],
+const sections = [
+  ['context','Jebel Ali context'],['architecture','Architecture'],['data','Synthetic data'],['model','Model evaluation'],
+  ['playground','Live prediction playground'],['seasonal','Seasonal intelligence'],['allocation','Allocation'],
+  ['optimization','Proactive positioning'],['physics','Physics and cost'],['benchmark','Benchmarks'],
+  ['deployment','Deployment'],['production','Production readiness'],
 ]
-const methods = [
-  ['Observed and synthetic data', '192 Port of Los Angeles monthly records cover 2010–2025. The facility and container-level records are synthetic. Port volumes inform weighting and seasonality. The generator couples appointments, carrier delays, vessel delays, cargo restrictions and pickup times.'],
-  ['Temporal model validation', 'Demand candidates are seasonal naive, three-year seasonal mean and XGBoost with lagged volumes and rolling means. Selection and residual calibration use 2022–2023. The 2024–2025 rolling-origin holdout uses earlier observations. Dwell uses a chronological synthetic split and a separate unseen-carrier cohort.'],
-  ['Safety and feasibility', 'Size, load, reefer, hazardous compatibility, reservation, holds, availability and reachability are shared rules. Each modeled rack has one dedicated crane. A shared route lock sequences the tray legs between the interface and the under-rack handoff points. Hazard policies and geometry require operator validation.'],
-  ['Scheduling and recovery', 'The solver uses optional intervals, exclusivity, transfer capacity, service priority, weighted movement energy, deadlines and queue age. Only immediate starts are committed. A failed rack crane leaves stored pickups waiting in that rack. Affected inbound work may return on its tray and be replanned to another rack.'],
-  ['Energy and emissions', 'Movement includes loaded and empty lift, bounded recovery, crane traction, auxiliary draw and separate tray traction. Powered idle is counted across the fixed scenario window. The CAMX 2023 generation factor converts electricity to operational CO₂e. Ship, truck and storage construction emissions are outside this boundary.'],
-  ['Trade-offs and pilot', 'Short deterministic solver budgets and candidate pruning favor interactive workloads. The model is suitable for sensitivity analysis with synthetic inputs. A pilot needs terminal movement logs, cargo policy, drive telemetry, verified crane geometry and shadow-mode validation.'],
-]
+type Stats = { n:number; mae:number; rmse:number; medianAbsoluteError:number; bias:number; wape:number }
+type Score = {
+  model: Stats; baseline: Stats; coverage: number; splits: number[]; residuals: number[]
+  seasonal: Record<string,Stats>; unseenReceivers?: Stats; commodity?: Record<string,Stats>
+}
+type ModelEvidence = {
+  version: string; library: string; artifactBytes: number; parameters: Record<string,number|string>; training: string
+  calibration: string; test: string; metrics: Record<string,Score>; artifactSha256: string
+}
+type DataEvidence = {
+  manifest: { seed: number; containers: number; dailyRecords: number; start: string; end: string;
+    commodityCounts: Record<string,number>; validation: Record<string,boolean> }
+  sample: { containerId: string; arrivalTimestamp: string; originPort: string; commodity: number; grossWeightKg: number; dwellTimeDays:number }[]
+  daily: { date: string; arrivals: number; pickups: number }[]
+}
+type Benchmark = {
+  conditions: string[]; method: string; seeds: number[]; summaries: {
+    condition: string; policy: Policy; kwh: number; retrieval: number | null; cost: number; moves: number; relocations: number
+    sla: number; shipped: number; unserved: number; rejected: number; adverseCostPairs: number; minCostDelta: number; maxCostDelta: number
+  }[]
+}
+type Assets = { dataset: DataEvidence; model: ModelEvidence; benchmark: Benchmark }
+const num = (value: number | null, digits = 2) => value === null ? '—' : value.toLocaleString('en-GB',{
+  minimumFractionDigits: digits, maximumFractionDigits: digits,
+})
 
-export default function Engineering() {
-  const [direction, setDirection] = useState<'import' | 'export'>('import')
-  const [tariff, setTariff] = useState(0.18)
-  const [runs, setRuns] = useState(100)
-  const [cloud, setCloud] = useState(240)
-  const [factor, setFactor] = useState(1)
-  const models = useQuery({ queryKey: ['models'], queryFn: () => getEvidence<ModelEvidence>('models') })
-  const results = useQuery({ queryKey: ['benchmarks'], queryFn: () => getEvidence<Benchmark>('benchmarks') })
-  const sources = useQuery({ queryKey: ['sources'], queryFn: () => getEvidence<SourceManifest>('sources') })
-  const score = models.data?.demand[direction]
-  const impact = results.data?.summaries.filter((s) =>
-    s.scenario === 'surge' && s.baseline === 'reactive' && s.policy === 'predictive') ?? []
-  const energy = impact.find((s) => s.metric === 'kwh')
-  const emissions = impact.find((s) => s.metric === 'kg_co2e')
-  const service = impact.find((s) => s.metric === 'on_time_pct')
-  const waiting = impact.find((s) => s.metric === 'pickup_wait_s')
-  const backlog = impact.find((s) => s.metric === 'backlog')
-  const adverse = results.data?.summaries.filter((s) => s.baseline === 'reactive' && s.policy === 'predictive'
-    && s.negative_pairs > 0 && ['pickup_wait_s', 'on_time_pct', 'kwh', 'backlog'].includes(s.metric))
-    .sort((a, b) => b.negative_pairs - a.negative_pairs).slice(0, 5) ?? []
-
-  const sensitivity = energy ? [.5, .75, 1, 1.25, 1.5, 1.75, 2].map((scale) => ({
-    scale, usd: -energy.delta * scale * tariff * runs - cloud,
-  })) : []
-
+function FeaturePlayground({ data, bundle }: {data: DemoData; bundle: Bundle}) {
+  const [left, setLeft] = useState(data.defaultDate)
+  const [right, setRight] = useState('2025-03-13')
+  const [difference, setDifference] = useState<number>()
+  const [base, setBase] = useState({ ...data.incoming[0] })
+  const [compareCargo, setCompareCargo] = useState({ ...data.incoming[0] })
+  const [operatingA, setA] = useState(data.scenarios[0])
+  const [operatingB, setB] = useState(data.scenarios[0])
+  const a = useMemo(() => predict(bundle,data,base,dubaiTime(left),operatingA), [bundle,data,base,left,operatingA])
+  const b = useMemo(() => predict(bundle,data,compareCargo,dubaiTime(right),operatingB), [bundle,data,compareCargo,right,operatingB])
+  function lab(name: string, cargo: Cargo, setCargo: (value: Cargo)=>void, date:string, setDay:(value:string)=>void,
+    operating: Operating, update:(value: Operating)=>void, output: typeof a) {
+    const scale = Math.max(.1, Math.abs(output.sensitivity[0]?.days ?? 0))
+    return <div className="playground-card">
+      <h3>{name}</h3>
+      <label>Arrival date<input aria-label={name+' arrival date'} type="date" min={data.dateMin} max={data.dateMax} value={date} onChange={(e) => {
+        if (e.currentTarget.value >= data.dateMin && e.currentTarget.value <= data.dateMax) setDay(e.currentTarget.value)
+      }}/></label>
+      <label>Commodity<select value={cargo.commodity} onChange={(e) => setCargo({...cargo, commodity:Number(e.currentTarget.value)})}>
+        {data.commodities.map((value,index)=><option key={value} value={index}>{value}</option>)}</select></label>
+      <label>Receiver<select value={cargo.receiver} onChange={(e) => setCargo({...cargo, receiver:Number(e.currentTarget.value)})}>
+        {data.receivers.map((value,index)=><option key={value.id} value={index}>{value.name}</option>)}
+        <option value={-1}>Unseen receiver</option></select></label>
+      <label>Origin<select value={cargo.lane} onChange={(e) => setCargo({...cargo, lane:Number(e.currentTarget.value)})}>
+        {data.ports.map((value,index)=><option key={index} value={index}>{value}{value === 'Jebel Ali' ? ' → ' + data.destinations[index] : ''}</option>)}</select></label>
+      <label>Weight · t<input type="number" min="7" max={cargo.size===20?28:36} step=".5" value={cargo.kg/1000}
+        onChange={(e) => {if(e.currentTarget.valueAsNumber >= 7 && e.currentTarget.valueAsNumber <= (cargo.size===20?28:36))
+          setCargo({...cargo,kg:e.currentTarget.valueAsNumber*1000})}}/></label>
+      <label>Scenario<select value={operating.id} onChange={(e) => {
+        const option = data.scenarios.find(({id})=>id===e.currentTarget.value)
+        if(option) update(option)
+      }}>{data.scenarios.map(({id,name})=><option key={id} value={id}>{name}</option>)}</select></label>
+      {(['occupancy','congestion','truck'] as const).map((key) => <label key={key}>
+        {key === 'truck' ? 'Truck capacity' : key[0].toUpperCase()+key.slice(1)}
+        <input type="range" aria-label={name+' '+key} min="0" max="1" step=".01" value={operating[key]}
+          onChange={(e)=>update({...operating,[key]:Number(e.currentTarget.value)})}/><output>{Math.round(operating[key]*100)}%</output></label>)}
+      <label>Cranes available<select value={operating.cranes} onChange={(e)=>update({...operating,cranes:Number(e.currentTarget.value)})}>
+        <option value={2}>2</option><option value={1}>1</option><option value={0}>0</option></select></label>
+      <div className="result">{output.days.toFixed(2)} days</div>
+      <p>{formatDubai(output.pickup)} · {output.event}</p>
+      <p>{output.low !== null && output.high !== null ? `${output.low.toFixed(1)}–${output.high.toFixed(1)} d synthetic interval` : 'Interval unavailable'} · {output.durationMs.toFixed(2)} ms</p>
+      {output.sensitivity.slice(0,4).map(({feature,days})=><div key={feature} className="sensitivity">
+        <div className="factor"><span>{feature}</span>
+          <strong className={days<0?'green-text':'amber-text'}>{days>0?'+':''}{days.toFixed(2)} d</strong></div>
+        <div className="sensitivity-track" aria-hidden="true"><i style={{ width:`${Math.abs(days)/scale*100}%`,
+          background:days<0?'var(--green)':'var(--amber)' }}/></div>
+      </div>)}
+    </div>
+  }
+  const delta=b.days-a.days
   return <>
-    <div className="page-intro"><div><div className="eyebrow"><BookOpen size={15}/> ENGINEERING CASE STUDY</div>
-      <h1>Predictive storage and scheduling</h1>
-      <p>How demand signals change crane and slot decisions, and how those changes affect service and energy.</p></div>
-      <Link className="button primary" to="/benchmarks"><FlaskIcon/> Explore benchmarks <ArrowUpRight size={15}/></Link>
-    </div>
-    <div className="case-hero">
-      <div><h2>Can earlier decisions improve pickup readiness?</h2>
-        <p>Every container in a high-bay system is individually accessible. The remaining opportunity is in selecting storage positions, coordinating crane work, and protecting pickup commitments when equipment or demand changes.</p>
-        <Link to="/?scenario=surge" className="case-link">Replay the demand surge <ArrowRight size={16}/></Link>
-      </div>
-      <div className="hero-results">
-        <span>DEMAND SURGE · PREDICTIVE VS REACTIVE</span>
-        {service && <div><strong>{service.delta > 0 ? '+' : ''}{fmt(service.delta, 1)} pp</strong><span>On-time pickup delta</span></div>}
-        {waiting && <div><strong>{waiting.delta > 0 ? '+' : ''}{fmt(waiting.delta, 1)} s</strong><span>Mean pickup wait delta</span></div>}
-        {energy && <div><strong>{energy.delta > 0 ? '+' : ''}{fmt(energy.delta, 1)} kWh</strong><span>Electrical energy delta</span></div>}
-        <small>{service?.pairs ?? '—'} matched seed pairs · simulated</small>
-      </div>
-    </div>
-    {[models.error, results.error, sources.error].filter(Boolean).map((error, i) => <EvidenceError key={i} error={error}/>)}
-    <Panel title="Operations workflow" subtitle="From published historical signals to reproducible decisions">
-      <div className="stage-grid">{stages.map(([title, description]) => <article key={title}><Workflow size={20}/><h3>{title}</h3><p>{description}</p></article>)}</div>
-    </Panel>
-    <Panel title="Architecture and deployment" subtitle="The new service owns state transitions, and the browser projects the event log">
-      <div className="architecture">
-        <div><h3>Legacy prototype</h3><span><Layers3 size={16}/> React Create React App / Unity</span><ArrowRight size={14}/>
-          <span><Server size={16}/> Express + Socket.IO</span><ArrowRight size={14}/><span><Database size={16}/> SQLite + in-memory grid</span>
-          <p>Separate Python dwell server, local processes, multiple state owners and independent energy calculations.</p></div>
-        <div><h3>BOXBAY AI 2.0</h3><span><Layers3 size={16}/> Vite + Three.js / Netlify</span><ArrowRight size={14}/>
-          <span><Server size={16}/> FastAPI / Railway</span><ArrowRight size={14}/><span><Database size={16}/> Neon or SQLite + recorded artifacts</span>
-          <p>Local training, generated contracts and GitHub Actions. The static frontend can present recorded evidence during a cold start.</p></div>
-      </div>
-    </Panel>
-    <div className="evidence-grid equal">
-      <Panel title="Observed port volumes" subtitle="Port of Los Angeles · loaded TEU by month">
-        <div className="chart"><ResponsiveContainer><LineChart data={models.data?.historical ?? []}>
-          <CartesianGrid vertical={false} stroke="#e3e9eb"/><XAxis dataKey="month" minTickGap={46}/>
-          <YAxis width={56} tickFormatter={(v) => `${v / 1000}k`}/><Tooltip/><Legend/>
-          <Line dataKey="loaded_import_teu" name="Loaded imports" stroke="#128a7b" strokeWidth={2} dot={false} isAnimationActive={false}/>
-          <Line dataKey="loaded_export_teu" name="Loaded exports" stroke="#61779b" strokeWidth={2} dot={false} isAnimationActive={false}/>
-        </LineChart></ResponsiveContainer></div>
-      </Panel>
-      <Panel title="Forecast holdout" subtitle="One-month-ahead validation · 2024–2025"
-        action={<select aria-label="Forecast direction" value={direction} onChange={(e) => setDirection(e.target.value as typeof direction)}><option value="import">Imports</option><option value="export">Exports</option></select>}>
-        <div className="chart"><ResponsiveContainer><LineChart data={score?.holdout ?? []}>
-          <CartesianGrid vertical={false} stroke="#e3e9eb"/><XAxis dataKey="month" minTickGap={36}/>
-          <YAxis width={57} tickFormatter={(v) => `${Math.round(v / 1000)}k`}/><Tooltip/><Legend/>
-          <Line dataKey="observed" name="Observed" stroke="#162638" strokeWidth={2} dot={false} isAnimationActive={false}/>
-          <Line dataKey="prediction" name="Prediction" stroke="#128a7b" strokeWidth={2} dot={false} isAnimationActive={false}/>
-          <Line dataKey="low" name="Interval lower" stroke="#92a7ac" strokeDasharray="4 4" dot={false} isAnimationActive={false}/>
-          <Line dataKey="high" name="Interval upper" stroke="#92a7ac" strokeDasharray="4 4" dot={false} isAnimationActive={false}/>
-        </LineChart></ResponsiveContainer></div>
-        {score && <p className="chart-note">{score.selected.replaceAll('_',' ')} · MAE {fmt(score.selected_test.mae)} TEU · WAPE {fmt(score.selected_test.wape_pct, 1)}% · Interval coverage {fmt(score.selected_test.coverage_pct ?? 0, 1)}%</p>}
-      </Panel>
-      <Panel title="Forecast residuals" subtitle="Prediction minus observed volume · TEU">
-        <div className="chart medium"><ResponsiveContainer><LineChart data={score?.holdout ?? []}>
-          <XAxis dataKey="month" minTickGap={36}/><YAxis width={57} tickFormatter={(v) => `${Math.round(v / 1000)}k`}/><Tooltip/>
-          <ReferenceLine y={0} stroke="#67748a"/><Line dataKey="error" name="Forecast error" stroke="#b3794e" dot={false} isAnimationActive={false}/>
-        </LineChart></ResponsiveContainer></div>
-        {score && <p className="chart-note">RMSE {fmt(score.selected_test.rmse)} TEU · Bias {fmt(score.selected_test.bias)} TEU · Peak MAE {fmt(score.selected_test.peak_mae)} TEU</p>}
-      </Panel>
-      <Panel title="Dwell calibration" subtitle="Synthetic holdout · observed vs estimated dwell days">
-        <div className="chart medium"><ResponsiveContainer><ScatterChart>
-          <XAxis type="number" dataKey="actual" name="Realized" unit=" d"/><YAxis type="number" dataKey="prediction" name="Estimated" unit=" d"/><Tooltip/>
-          <Scatter data={models.data?.dwell.holdout ?? []} name="Synthetic records" fill="#128a7b" fillOpacity={.57} isAnimationActive={false}/>
-        </ScatterChart></ResponsiveContainer></div>
-        {models.data && <p className="chart-note">MAE {fmt(models.data.dwell.test.mae, 2)} d · baseline {fmt(models.data.dwell.baseline.mae, 2)} d · unseen carrier {fmt(models.data.dwell.unseen_carrier.mae, 2)} d · interval coverage {fmt(models.data.dwell.test.coverage_pct ?? 0, 1)}%</p>}
-      </Panel>
-    </div>
-    <div className="evidence-grid equal">
-      <Panel title="Adverse outcomes" subtitle="Scenarios and metrics where prediction hurt at least one paired result">
-        <div className="stat-list">
-          {adverse.map((s) => <p key={`${s.scenario}-${s.metric}`}><strong>{s.scenario.replaceAll('-', ' ')}</strong> · {s.metric.replaceAll('_', ' ')} · {s.negative_pairs}/{s.pairs} adverse pairs</p>)}
-          {backlog && <p>Surge ending backlog delta {fmt(backlog.delta, 2)} tasks.</p>}
-          <p className="muted">Seed-pair intervals describe simulated variability. Energy totals should be interpreted alongside moves completed and ending backlog.</p>
-          <Link className="button" to="/benchmarks">Inspect paired outcomes <ArrowUpRight size={15}/></Link>
-        </div>
-      </Panel>
-      <Panel title="Financial and emissions sensitivity" subtitle="Illustrative assumptions applied to the matched demand-surge result">
-        <div className="stat-list">
-          <div className="form-row sensitivity">
-            <label>Electricity USD/kWh<input min="0" type="number" step=".01" value={tariff} onChange={(e) => setTariff(Math.max(0, Number(e.target.value)))}/></label>
-            <label>Equivalent runs/year<input min="0" type="number" step="1" value={runs} onChange={(e) => setRuns(Math.max(0, Number(e.target.value)))}/></label>
-            <label>Cloud USD/year<input min="0" type="number" step="1" value={cloud} onChange={(e) => setCloud(Math.max(0, Number(e.target.value)))}/></label>
-            <label>Energy multiplier<input min=".5" max="2" type="number" step=".05" value={factor} onChange={(e) => setFactor(Math.min(2, Math.max(.5, Number(e.target.value))))}/></label>
-          </div>
-          {energy && <ComparisonHeadline title={`USD ${fmt(-energy.delta * factor * tariff * runs - cloud, 2)} per year`}
-            detail={`Illustrative electricity cost difference less cloud cost. Projected avoided emissions ${fmt(-(emissions?.delta ?? 0) * factor * runs, 2)} kg CO₂e.`}/>}
-          <div className="chart medium"><ResponsiveContainer><LineChart data={sensitivity}>
-            <XAxis type="number" dataKey="scale" domain={[.5, 2]} tickFormatter={(x) => `${x}×`}/><YAxis width={49}/><Tooltip/>
-            <ReferenceLine x={factor} stroke="#718396" strokeDasharray="3 3"/>
-            <Line type="linear" dataKey="usd" name="Illustrative USD per year" stroke="#128a7b" isAnimationActive={false}/>
-          </LineChart></ResponsiveContainer></div>
-          <p className="muted">This projection assumes the same measured kWh delta for each equivalent run. Labor, throughput revenue and capital benefits are excluded.</p>
-        </div>
-      </Panel>
-    </div>
-    <Panel title="Method and validation boundaries" subtitle="Open each section to review model inputs, constraints and assumptions">
-      <div className="method-list">{methods.map(([title, desc]) => <details key={title}><summary>{title}</summary><p>{desc}</p></details>)}</div>
-    </Panel>
-    <Panel title="Sources and reproducibility" subtitle={models.data?.dataset_version ?? 'Versioned training and benchmark artifacts'}>
-      <div className="source-list">{sources.data?.sources.map((source) => <article key={source.id}>
-        <h3><a href={source.url} target="_blank" rel="noreferrer">{source.name} <ArrowUpRight size={14}/></a></h3>
-        <p>{source.publisher} · {source.coverage}</p><p>{source.limitations}</p>
-      </article>)}
-      <article><h3>Reproduce locally</h3><p><code>make train</code> exports model evidence. <code>make benchmark</code> regenerates matched results and replays.</p>
-        <p className="mono">Training seed {models.data?.seed} · model {models.data?.version}</p></article></div>
-    </Panel>
+    <div className="columns">{lab('Input A',base,setBase,left,setLeft,operatingA,setA,a)}
+      {lab('Input B',compareCargo,setCompareCargo,right,setRight,operatingB,setB,b)}</div>
+    <p><strong>{delta>=0?'+':''}{delta.toFixed(2)} days</strong> for Input B relative to Input A.
+      {difference !== undefined && ` Saved comparison ${difference.toFixed(2)} days.`}</p>
+    <div><button type="button" className="button" onClick={()=>setDifference(delta)}>Pin current difference</button></div>
   </>
 }
 
-function FlaskIcon() { return <GitBranch size={16}/> }
+export default function Engineering({ data,bundle }: {data:DemoData;bundle:Bundle}) {
+  const [evidence,setEvidence]=useState<Assets>()
+  const [failure,setFailure]=useState('')
+  const [sample,setSample]=useState(0)
+  const [scenario,setScenario]=useState('normal')
+  const [allocationDate,setAllocationDate]=useState(data.defaultDate)
+  const [workerScenario,setWorkerScenario]=useState('surge')
+  const worked=useMemo(() => {
+    const base=initialize(data,bundle,allocationDate)
+    return evaluate(base,data,bundle)
+  }, [data,bundle,allocationDate])
+  const review=useMemo(() => {
+    const base=initialize(data,bundle)
+    const operation=data.scenarios.find((item)=>item.id===workerScenario) ?? base.operation
+    return opportunities({...base,operation,rates:workerScenario==='no-action'?{...base.rates,time:0}:base.rates},data,bundle)
+  }, [data,bundle,workerScenario])
+  useEffect(()=>{
+    const controller = new AbortController()
+    const fetchEvidence = async <T,>(name: string) => {
+      const response = await fetch(import.meta.env.BASE_URL + 'evidence/' + name + '.json', { signal:controller.signal })
+      if(!response.ok) throw Error('Evidence could not be loaded.')
+      return response.json() as Promise<T>
+    }
+    void Promise.all([fetchEvidence<DataEvidence>('dataset'),fetchEvidence<ModelEvidence>('model-evaluation'),
+      fetchEvidence<Benchmark>('simulation-benchmark')]).then(([dataset,model,benchmark])=>setEvidence({dataset,model,benchmark}))
+      .catch((error:unknown)=>{if(!controller.signal.aborted) setFailure(error instanceof Error?error.message:String(error))})
+    return ()=>controller.abort()
+  },[])
+  const model=evidence?.model
+  const stats=model?.metrics.dwell
+  const samples=evidence?.dataset.sample ?? []
+  const row=samples[sample]
+  const benchmark=evidence?.benchmark
+  const residuals=useMemo(()=>{
+    const samples=stats?.residuals ?? []
+    return Array.from({length:13},(_,i)=>{
+      const min=(i-6)*.5
+      return { offset:min, count:samples.filter((r)=>r>=min-.25 && r<min+.25).length }
+    })
+  },[stats])
+  return <div className="engineering">
+    <nav aria-label="Engineering sections">{sections.map(([id,label])=><a key={id} href={'#'+id}>{label}</a>)}</nav>
+    <article>
+      <header><h1>Engineering the live decision</h1><p>Predict earlier. Position smarter. Optimize proactively.</p></header>
+      {failure && <div role="alert" className="inline-alert">{failure}</div>}
+      <section id="context"><h2>Jebel Ali context</h2>
+        <p>DP World documented 792 storage positions at the Terminal 4 BOXBAY trial and more than 63,000 moves by August 2021.
+          The 15.5 million TEU reported for 2024 covers Jebel Ali Port as a whole. Each high-bay position supports individual access.
+          This independent 64-cell demonstrator explores the incremental value of placement and proactive positioning on that type of infrastructure.</p>
+        <div className="stat-row">
+          <a href="https://www.dpworld.com/en/news/dp-world-celebrates-boxbay-milestone-with-completion-of-the-first-10000-container-moves">Terminal 4 trial</a>
+          <a href="https://www.dpworld.com/en/news/successful-real-world-trial-of-boxbay-high-bay-storage-system-completed">Trial results</a>
+          <a href="https://www.dpworld.com/en/news/releases/uae/dp-world-records-highest-cargo-volumes-at-jebel-ali-port-since-2015">2024 port volumes</a>
+          <a href="https://www.dpworld.com/en/ports-terminals/uae/jebel-ali-port">Jebel Ali Port</a></div>
+      </section>
+      <section id="architecture"><h2>Architecture</h2>
+        {[
+          ['Synthetic data → feature engineering','Seeded container and daily demand records produce time-aware numerical inputs.'],
+          ['Training → model artifacts','Python fits XGBoost on chronological partitions and exports tree nodes, numeric references, evaluation and parity fixtures.'],
+          ['Browser inference → allocation','Portable trees calculate dwell and expected demand. The constraint filter and unit-normalized score rank feasible cells.'],
+          ['Worker planning → simulation state','The worker returns advisory moves. The action state validates and commits custody, equipment positions and event metrics.'],
+          ['Simulation state → digital twin and business metrics','The renderer animates the approved equipment legs. The business strip reads the same committed inventory and movement ledger.'],
+        ].map(([label,body])=><details key={label}><summary>{label}</summary><p>{body}</p></details>)}
+      </section>
+      <section id="data"><h2>Synthetic data and validation</h2>
+        {evidence && <>
+          <p>{num(evidence.dataset.manifest.containers,0)} records and {num(evidence.dataset.manifest.dailyRecords,0)} daily observations,
+            {evidence.dataset.manifest.start} through {evidence.dataset.manifest.end}. Seed {evidence.dataset.manifest.seed}.</p>
+          <p>Arrival timestamps are ordered. Departure labels follow arrival. Receiver history is updated only after completed pickups. Initial yard, vessel schedules and receivers are fictional.</p>
+          <details><summary>Commodity distribution and receiver profiles</summary>
+            <p>{Object.entries(evidence.dataset.manifest.commodityCounts).map(([name,n])=>`${name} ${num(n,0)}`).join(' · ')}</p>
+            <p>{data.receivers.map(({name,dwell,reliability})=>`${name} (${dwell} d, ${Math.round(reliability*100)}% prior reliability)`).join(' · ')}</p>
+            <p>{data.ports.map((port,i)=>`${port} → ${data.destinations[i]}`).join(' · ')}</p>
+          </details>
+        </>}
+        {row && <><label>Sample record <select value={sample} onChange={(e)=>setSample(Number(e.currentTarget.value))}>
+          {samples.map((item,i)=><option key={item.containerId} value={i}>{item.containerId}</option>)}</select></label>
+          <p>{row.originPort} · {data.commodities[row.commodity]} · {(row.grossWeightKg/1000).toFixed(1)} t · {formatDubai(Date.parse(row.arrivalTimestamp))} · {row.dwellTimeDays.toFixed(2)} d realized synthetic target</p>
+          <a href={import.meta.env.BASE_URL+'evidence/container-sample.csv'} download>Download synthetic CSV sample</a></>}
+      </section>
+      <section id="model"><h2>Model evaluation</h2>
+        <p>All holdout results describe synthetic observations. Cold-start inputs use documented group priors without an identity code.</p>
+        {model && stats && <>
+          <p>{model.library} · {model.version} · {num(model.artifactBytes/1024,0)} KiB.
+            Train {model.training}, calibrate {model.calibration}, test {model.test}. Dwell split {stats.splits.map((n)=>num(n,0)).join(' / ')}.</p>
+          <div className="table-wrap"><table><thead><tr><th>Model</th><th>Unit</th><th>MAE</th><th>Baseline MAE</th><th>RMSE</th><th>Interval coverage</th></tr></thead>
+            <tbody>{Object.entries(model.metrics).map(([name,value])=><tr key={name}><td>{name}</td><td>{name==='dwell'?'Days':'Containers'}</td>
+              <td>{num(value.model.mae)}</td><td>{num(value.baseline.mae)}</td><td>{num(value.model.rmse)}</td><td>{num(value.coverage*100,1)}%</td></tr>)}</tbody></table></div>
+          {model.metrics.pickups.model.mae > model.metrics.pickups.baseline.mae && <p>The 24-hour pickup model trailed its historical-mean baseline. Treat it as a diagnostic estimate in the demo.</p>}
+          <p>Dwell median absolute error {num(stats.model.medianAbsoluteError)} days.
+            {stats.unseenReceivers && ` Unseen receivers ${num(stats.unseenReceivers.mae)} days MAE across ${num(stats.unseenReceivers.n,0)} rows.`}</p>
+          <div className="chart" aria-label="Synthetic dwell holdout residual distribution"><ResponsiveContainer>
+            <LineChart data={residuals}><CartesianGrid stroke="var(--border)"/><XAxis dataKey="offset" tick={{fill:'var(--muted)'}}/>
+              <YAxis allowDecimals={false} tick={{fill:'var(--muted)'}}/><Tooltip/><Line name="Sample count by residual (days)" dataKey="count" stroke="var(--blue)" isAnimationActive={false}/></LineChart>
+          </ResponsiveContainer></div>
+          <details><summary>Seasonal results and training configuration</summary>
+            <p>{Object.entries(stats.seasonal).map(([label,value])=>`${label} ${num(value.mae)} d MAE (n=${num(value.n,0)})`).join(' · ')}</p>
+            <p>{Object.entries(model.parameters).map(([label,value])=>`${label}=${value}`).join(' · ')}</p>
+            <p>Inputs {bundle.models.dwell.features.join(' · ')}.</p>
+          </details>
+        </>}
+      </section>
+      <section id="playground"><h2>Live prediction playground</h2>
+        <p>Each column calls the same model as the demo. Single-feature sensitivity compares the prediction with one input replaced by the training median. Effects can overlap and do not establish causation.</p>
+        <FeaturePlayground data={data} bundle={bundle}/>
+      </section>
+      <section id="seasonal"><h2>Seasonal intelligence</h2>
+        <p>Features use Gulf Standard Time and a versioned calendar of illustrative regional windows. Ramadan and Eid affect pickup capacity and low-priority cargo in the generator. Year-end retail accelerates selected goods and Lunar New Year raises modeled dwell on selected East Asian lanes. Calendar windows and effects are synthetic planning assumptions.</p>
+        <p>{data.eventNames.slice(1).join(' · ')}</p>
+        {evidence && <div className="chart" aria-label="Sampled synthetic training demand"><ResponsiveContainer>
+          <LineChart data={evidence.dataset.daily}><CartesianGrid stroke="var(--border)"/><XAxis dataKey="date" minTickGap={72} tick={{fill:'var(--muted)'}}/>
+            <YAxis tick={{fill:'var(--muted)'}}/><Tooltip/><Line name="Inbound" dataKey="arrivals" stroke="var(--blue)" dot={false} isAnimationActive={false}/>
+            <Line name="Pickups" dataKey="pickups" stroke="var(--green)" dot={false} isAnimationActive={false}/></LineChart>
+        </ResponsiveContainer></div>}
+      </section>
+      <section id="allocation"><h2>Slot allocation</h2>
+        <p>Scan every cell. Reject blocked, occupied, unreachable, overweight, size-incompatible, unpowered, unsegregated or reserved cells. Rank feasible cells by a dimensionless sum of placement (.30), retrieval (.37), capacity (.18), crane workload (.08) and SLA risk (.07). Each term uses documented physical references in the source.</p>
+        <label>Worked example date <input type="date" value={allocationDate} min={data.dateMin} max={data.dateMax}
+          onChange={(e)=>{if(e.currentTarget.value>=data.dateMin&&e.currentTarget.value<=data.dateMax)setAllocationDate(e.currentTarget.value)}}/></label>
+        <p>{worked?.choices.length ?? 0} feasible. {Object.entries(worked?.rejected ?? {}).map(([key,count])=>`${count} ${key.toLowerCase()}`).join(' · ')}.</p>
+        <div className="table-wrap"><table><thead><tr><th>Slot</th><th>Score</th><th>Placement kWh</th><th>Retrieval s</th><th>Capacity score</th></tr></thead>
+          <tbody>{worked?.choices.slice(0,5).map((r)=><tr key={r.slot.id}><td>{r.slot.id}</td><td>{num(r.score,3)}</td>
+            <td>{num(r.placement.kwh)}</td><td>{num(r.retrieval.seconds,0)}</td><td>{num(r.components.capacity,3)}</td></tr>)}</tbody></table></div>
+      </section>
+      <section id="optimization"><h2>Proactive positioning</h2>
+        <p>The worker compares currently stored cargo with free cells in the same crane zone. Remaining dwell uses an arrival-age-truncated model band and a tail allowance. Within {assumptions.horizonDays} days, expected pickup benefit must cover all move costs plus AED {assumptions.minimumBenefitAED.toFixed(2)}. Idle-window time is valued at {assumptions.earlyStagingTimeFactor*100}% of pickup time. Each review can commit one move and each container can be proactively moved once per session.</p>
+        <label>Generate a plan <select value={workerScenario} onChange={(e)=>setWorkerScenario(e.currentTarget.value)}>
+          {data.scenarios.map(({id,name})=><option key={id} value={id}>{name}</option>)}<option value="no-action">Zero time-related benefit</option>
+        </select></label>
+        {!review.length ? <p>No relocation recommended.</p> : review.map(({plan,current,proposed,benefit,move})=>
+          <p key={plan.cargo.id+plan.target.id}>{plan.cargo.id} · {plan.source} → {plan.target.id} · {num(current.seconds-proposed.seconds,0)} s faster pickup · {num(move.kwh)} kWh relocation · AED {num(benefit)} projected net benefit</p>)}
+      </section>
+      <section id="physics"><h2>Physics and cost</h2>
+        <ul>
+          <li>Lift potential is m × {physics.gravity} × height change, divided by 3.6 million to get kWh. Lift efficiency is {physics.liftEfficiency}; lowering recovers a fraction of {physics.regeneration}. Draw is clipped at zero for a movement leg.</li>
+          <li>Crane travel combines loaded and empty horizontal and vertical legs, auxiliary power and powered idle. Tray draw combines distance and loaded mass. The model serializes equipment in each action.</li>
+          <li>Cost in AED is kWh × electricity + km × equipment + active hours × time. Illustrative defaults are {data.rates.electricity} AED/kWh, {data.rates.equipment} AED/km and {data.rates.time} AED/h.</li>
+          <li>Modeled CO₂e is energy × {data.rates.emissions} kg/kWh. USD uses {data.rates.usd} USD per AED. Both are illustrative inputs editable in the demo.</li>
+        </ul>
+      </section>
+      <section id="benchmark"><h2>Matched simulation benchmarks</h2>
+        {benchmark && <>
+          <p>{benchmark.method} {benchmark.seeds.length} matched seeds per condition. Pickup means describe completed pickups. Compare alongside unserved demand and adverse pairs.</p>
+          <label>Benchmark condition <select value={scenario} onChange={(e)=>setScenario(e.currentTarget.value)}>
+            {benchmark.conditions.map((id)=><option key={id} value={id}>{data.scenarios.find((s)=>s.id===id)?.name ?? id.replace('-',' ')}</option>)}
+          </select></label>
+          <div className="table-wrap"><table><thead><tr><th>Policy</th><th>Energy kWh</th><th>Pickup s</th><th>AED</th>
+            <th>Moves</th><th>Relocations</th><th>SLA</th><th>Unserved</th><th>Adverse cost pairs</th></tr></thead>
+          <tbody>{benchmark.summaries.filter((s)=>s.condition===scenario).map((r)=><tr key={r.policy} title={`Paired cost range AED ${num(r.minCostDelta)} to ${num(r.maxCostDelta)}`}>
+            <td>{policyNames[r.policy]}</td><td>{num(r.kwh)}</td><td>{num(r.retrieval,1)}</td><td>{num(r.cost)}</td>
+            <td>{num(r.moves,1)}</td><td>{num(r.relocations,1)}</td><td>{num(r.sla*100,1)}%</td><td>{num(r.unserved,1)}</td>
+            <td>{r.adverseCostPairs} / {benchmark.seeds.length}</td></tr>)}</tbody></table></div>
+          <p>Adverse pairs count cost increases versus first available. Hover a policy row for the minimum and maximum paired cost deltas.</p>
+        </>}
+      </section>
+      <section id="deployment"><h2>Deployment</h2>
+        <p>Local Python creates synthetic data and portable XGBoost artifacts. Vite deploys the application and worker with same-origin assets. Netlify serves the two routes. The previous multi-service runtime used an API, managed services and static event recordings.</p>
+        <p>Run <code>npm ci</code>, <code>npm run dev</code> or <code>npm run build</code>. Run training and benchmark generation explicitly when publishing refreshed evidence.</p>
+      </section>
+      <section id="production"><h2>Production readiness</h2>
+        <p>This independent proof of concept simulates equipment. Terminal integration would require actual dwell and vessel histories, verified restrictions and crane geometry, telemetry, energy calibration, approval workflows, shadow-mode safety validation, audit records, model drift monitoring and scheduled retraining.</p>
+      </section>
+    </article>
+  </div>
+}

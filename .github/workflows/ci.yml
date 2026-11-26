@@ -1,52 +1,33 @@
-name: BOXBAY verification
+name: BOXBAY AI verification
 on:
   push:
   pull_request:
 permissions:
   contents: read
+
 jobs:
-  verification:
+  verify:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: services/intelligence/requirements*.txt
       - uses: actions/setup-node@v4
         with:
           node-version: '22.22.0'
           cache: npm
-          cache-dependency-path: apps/web/package-lock.json
-      - run: python -m pip install -r services/intelligence/requirements-dev.txt
-      - run: npm --prefix apps/web ci
-      - run: make contracts PYTHON=python
-      - run: git diff --exit-code -- packages/contracts apps/web/src/contracts.generated.ts
-      - run: make verify PYTHON=python
-      - run: npm --prefix apps/web audit --omit=dev --audit-level=high
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: npm ci
+      - run: python -m unittest discover -s tests -p test_data.py
+      - run: npm run lint
+      - run: npm test
+      - run: npm run benchmark
+      - run: git diff --exit-code -- apps/web/public/evidence/simulation-benchmark.json
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm audit --omit=dev --audit-level=high
       - uses: actions/upload-artifact@v4
         with:
-          name: netlify-build
+          name: netlify-site
           path: apps/web/dist
-  container-smoke:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - uses: docker/build-push-action@v6
-        with:
-          context: .
-          tags: boxbay-ai:ci
-          load: true
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Verify runtime and model artifact
-        run: |
-          docker run -d --rm --name boxbay-ci -p 127.0.0.1:8000:8000 boxbay-ai:ci
-          curl --fail --retry 12 --retry-all-errors --retry-delay 1 http://127.0.0.1:8000/api/v1/ready
-          curl --fail http://127.0.0.1:8000/api/v1/models/metadata -o /tmp/boxbay-model.json
-          test "$(jq -r .version /tmp/boxbay-model.json)" = "pola-monthly-dwell-xgb-v1"
-      - name: Stop smoke container
-        if: always()
-        run: docker rm -f boxbay-ci || true
