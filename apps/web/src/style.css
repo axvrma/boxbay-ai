@@ -68,8 +68,9 @@ p{line-height:1.48}
 #root:has(.demo-shell) > .app-header {
   position: absolute;
   z-index: 2;
-  inset: var(--hud-edge) auto auto var(--hud-edge);
-  max-width: calc(100% - 2 * var(--hud-edge));
+  inset: var(--hud-edge) var(--hud-edge) auto;
+  width: fit-content;
+  margin-inline: auto;
   min-height: 46px;
   gap: 12px;
   padding: 5px 9px;
@@ -79,7 +80,7 @@ p{line-height:1.48}
   box-shadow: var(--card-shadow);
 }
 #root:has(.demo-shell) .brand-mark { width: 32px; height: 32px; }
-#root:has(.demo-shell) .location { padding-left: 12px; white-space: nowrap; }
+#root:has(.demo-shell) .location { padding-inline: 12px; border-right: 1px solid var(--border); white-space: nowrap; }
 #root:has(.demo-shell) .app-header nav { margin-left: 0; }
 #root:has(.demo-shell) .app-header nav a { padding: 6px 8px; white-space: nowrap; }
 #root:has(.demo-shell) > .site-footer {
